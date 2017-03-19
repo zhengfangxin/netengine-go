@@ -13,7 +13,7 @@ func (c *NetEngine) connectto(nettype, addr string) (int, error) {
 		return 0, err
 	}
 
-	con, err := net.DialTCP(nettype, tcpaddr, nil)
+	con, err := net.DialTCP(nettype, nil, tcpaddr)
 	if err != nil {
 		return 0, err
 	}
@@ -31,6 +31,7 @@ func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, rec
 	n.RecvValid = recv
 	n.SendValid = send
 	n.SendChan = make(chan []byte, 128)
+	n.IsStart = false
 
 	c.conntion_list[n.ID] = n
 
@@ -54,31 +55,34 @@ func (c *NetEngine) set_conntion_close_time(con *conntion, close_second int, sen
 	atomic.StoreInt32(&con.Timeout, int32(close_second))
 	atomic.StoreInt32(&con.SendValid, isend)
 	atomic.StoreInt32(&con.RecvValid, irecv)
+	newtime := time.Now().Add(add)
 	if send {
-		con.Con.SetWriteDeadline(time.Now().Add(add))
+		con.Con.SetWriteDeadline(newtime)
 	} else {
 		con.Con.SetWriteDeadline(time.Time{})
 	}
 	if recv {
-		con.Con.SetReadDeadline(time.Now().Add(add))
+		con.Con.SetReadDeadline(newtime)
 	} else {
 		con.Con.SetReadDeadline(time.Time{})
 	}
 }
 func (c *NetEngine) start_conntion(con *conntion) {
+	if con.IsStart {
+		return
+	}
+	con.IsStart = true
+	go c.conntion_run(con)
 }
 func (c *NetEngine) close_conntion(con *conntion) {
 	con.Con.Close()
 }
-func (c *NetEngine) send_data(id int, data []byte) {
-}
-
 func (c *NetEngine) conntion_run(con *conntion) {
-	//go c.conntion_write(con)
+	go c.conntion_write(con)
 	c.conntion_recv(con)
 
 	c.notify.OnClosed(con.ID)
-
+	c.del_conntion_chan <- con.ID
 }
 func (c *NetEngine) conntion_recv(con *conntion) {
 	buf := bytes.NewBufferString("")
@@ -116,5 +120,77 @@ recv_loop:
 			}
 		}
 	}
+}
+func (c *NetEngine) send_data(id int, data []byte) {
+	con, ok := c.conntion_list[id]
+	if !ok {
+		return
+	}
+	con.SendChan <- data
+}
+func (c *NetEngine) conntion_write(con *conntion) {
+	defer con.Con.Close()
 
+	data_chan := make(chan []byte)
+	defer close(data_chan)
+
+	go conntion_write_net(con, data_chan)
+
+	datalen := 0
+	data := make([][]byte, 0, 10000)
+
+for_loop:
+	for {
+		maxBufLen := int(atomic.LoadInt32(&con.MaxBufLen))
+		if len(data) > 0 {
+			s := data[0]
+			select {
+			case msg, ok := <-con.SendChan:
+				if !ok {
+					break for_loop
+				}
+				datalen += len(msg)
+				data = append(data, msg)
+				if datalen > maxBufLen {
+					break for_loop
+				}
+			case data_chan <- s:
+				data = data[1:]
+				datalen = datalen - len(s)
+			case <-time.After(time.Hour):
+
+			}
+		} else {
+			select {
+			case msg, ok := <-con.SendChan:
+				if !ok {
+					break for_loop
+				}
+				datalen += len(msg)
+				data = append(data, msg)
+				if datalen > maxBufLen {
+					c.notify.OnBufferLimit(con.ID)
+					break for_loop
+				}
+			case <-time.After(time.Hour):
+
+			}
+		}
+	}
+}
+func conntion_write_net(con *conntion, data chan []byte) {
+	netcon := con.Con
+	defer netcon.Close()
+	for d := range data {
+		recv := atomic.LoadInt32(&con.RecvValid)
+		if recv != 0 {
+			timeout := atomic.LoadInt32(&con.Timeout)
+			add := time.Duration(timeout)
+			netcon.SetWriteDeadline(time.Now().Add(add))
+		}
+		_, err := netcon.Write(d)
+		if err != nil {
+			break
+		}
+	}
 }

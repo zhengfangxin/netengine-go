@@ -22,6 +22,7 @@ func (c *NetEngine) listen(nettype, addr string) (int, error) {
 	n.Timeout = default_timeout
 	n.RecvValid = 1
 	n.SendValid = 1
+	n.IsStart = false
 
 	c.listener_list[n.ID] = n
 
@@ -45,6 +46,10 @@ func (c *NetEngine) set_listen_close_time(lis *listener, close_second int, send,
 	atomic.StoreInt32(&lis.RecvValid, irecv)
 }
 func (c *NetEngine) start_listen(lis *listener) {
+	if lis.IsStart {
+		return
+	}
+	lis.IsStart = true
 	go c.accept_run(lis)
 }
 func (c *NetEngine) close_listen(lis *listener) {
@@ -54,10 +59,14 @@ func (c *NetEngine) close_listen(lis *listener) {
 func (c *NetEngine) accept_run(lis *listener) {
 	listen := lis.Listen
 	defer listen.Close()
+	defer func() {
+		c.del_conntion_chan <- lis.ID
+	}()
+
 	for {
 		con, err := listen.AcceptTCP()
 		if err != nil {
-			return
+			break
 		}
 
 		addr := con.RemoteAddr()
@@ -82,7 +91,7 @@ func (c *NetEngine) accept_run(lis *listener) {
 
 		ncon := <-msg.ch
 
-		c.notify.OnAccept(lis.ID, ncon.ID)
+		c.notify.OnAccept(lis.ID, ncon.ID, addr)
 
 		c.start_conntion(ncon)
 	}

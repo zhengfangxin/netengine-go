@@ -15,6 +15,8 @@ func (c *NetEngine) Init(notify NetNotify) error {
 	c.lock = new(sync.Mutex)
 
 	c.add_conntion_chan = make(chan add_conntion_msg)
+	c.del_conntion_chan = make(chan int)
+	c.stop_chan = make(chan stop_msg)
 
 	c.get_remote_addr_chan = make(chan get_addr_msg)
 	c.get_local_addr_chan = make(chan get_addr_msg)
@@ -31,7 +33,22 @@ func (c *NetEngine) Init(notify NetNotify) error {
 	return nil
 }
 func (c *NetEngine) Stop() {
+	var msg stop_msg
+	msg.ch = make(chan int)
+	c.stop_chan <- msg
 
+	_ = <-msg.ch
+
+	// close all chan
+	close(c.get_remote_addr_chan)
+	close(c.get_local_addr_chan)
+	close(c.set_buf_chan)
+	close(c.set_closetime_chan)
+	close(c.listen_chan)
+	close(c.connect_chan)
+	close(c.start_chan)
+	close(c.send_chan)
+	close(c.close_chan)
 }
 
 func (c *NetEngine) GetRemoteAddr(id int) (net.Addr, bool) {
@@ -80,7 +97,7 @@ func (c *NetEngine) SetCloseTime(id int, close_second int, send, recv bool) {
 
 	c.set_closetime_chan <- msg
 }
-func (c *NetEngine) Listen(net, addr string) (int, error) {
+func (c *NetEngine) Listen(net, addr string) (id int, err error) {
 	var msg listen_msg
 	msg.Net = net
 	msg.Addr = addr
@@ -94,7 +111,7 @@ func (c *NetEngine) Listen(net, addr string) (int, error) {
 	}
 	return r.ID, r.err
 }
-func (c *NetEngine) ConnectTo(net, addr string) (int, error) {
+func (c *NetEngine) ConnectTo(net, addr string) (id int, err error) {
 	var msg connect_msg
 	msg.Net = net
 	msg.Addr = addr

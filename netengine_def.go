@@ -12,7 +12,7 @@ type NetNotify interface {
 	// return false to close
 	// 同一个listenid 会在一个goroute中调用
 	OnAcceptBefore(listenid int, addr net.Addr) bool
-	OnAccept(listenid int, id int)
+	OnAccept(listenid int, id int, addr net.Addr)
 
 	/* return -1 to close
 	return >0 to consume data
@@ -56,6 +56,8 @@ type NetEngine struct {
 	notify NetNotify
 
 	add_conntion_chan chan add_conntion_msg
+	del_conntion_chan chan int
+	stop_chan         chan stop_msg
 
 	get_remote_addr_chan chan get_addr_msg
 	get_local_addr_chan  chan get_addr_msg
@@ -76,7 +78,9 @@ type add_conntion_msg struct {
 	RecvValid int32
 	ch        chan *conntion
 }
-
+type stop_msg struct {
+	ch chan int
+}
 type get_addr_msg struct {
 	ID int
 	ch chan net.Addr

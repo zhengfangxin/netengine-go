@@ -6,11 +6,22 @@ import (
 )
 
 func (c *NetEngine) manage_run() {
+	is_stop := false
+	var stop_req stop_msg
+for_loop:
 	for {
+		timeout := time.Hour
+		if is_stop {
+			timeout = time.Second
+		}
 		select {
+		case r := <-c.send_chan:
+			c.send_data(r.ID, r.Data)
 		case r := <-c.add_conntion_chan:
 			con := c.add_conntion(r.Con, r.MaxBufLen, r.Timeout, r.SendValid, r.RecvValid)
 			r.ch <- con
+		case r := <-c.del_conntion_chan:
+			c.del_conntion(r)
 		case r := <-c.listen_chan:
 			var msg listen_ret_msg
 			msg.ID, msg.err = c.listen(r.Net, r.Addr)
@@ -39,32 +50,75 @@ func (c *NetEngine) manage_run() {
 			c.set_close_time(r.ID, r.CloseSecond, r.Send, r.Recv)
 		case r := <-c.start_chan:
 			c.start(r.ID)
-		case r := <-c.send_chan:
-			c.send_data(r.ID, r.Data)
 		case r := <-c.close_chan:
 			c.close(r.ID)
-		case <-time.After(time.Hour):
-
+		case r := <-c.stop_chan:
+			stop_req = r
+			is_stop = true
+			c.closeall()
+		case <-time.After(timeout):
+			if is_stop {
+				c.closeall()
+				if len(c.conntion_list)+len(c.listener_list) <= 0 {
+					break for_loop
+				}
+			}
 		}
 	}
+	stop_req.ch <- 0
 }
 
 func (c *NetEngine) get_id() int {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	r := c.id
-	for ; ; r++ {
+	for {
+		if r > 100*10000 {
+			r = 1
+		}
 		if _, ok := c.conntion_list[r]; !ok {
 			break
 		}
 		if _, ok := c.listener_list[r]; !ok {
 			break
 		}
+		r = r + 1
 	}
 	c.id = r + 1
 	return r
 }
+func (c *NetEngine) del_conntion(id int) {
+	con, ok := c.conntion_list[id]
+	if ok {
+		close(con.SendChan)
+		delete(c.conntion_list, id)
+		return
+	}
+	delete(c.listener_list, id)
+}
+func (c *NetEngine) closeall() {
+	listen_idlist := make([]int, 0)
+	conntion_idlist := make([]int, 0)
+	for _, v := range c.listener_list {
+		v.Listen.Close()
+		if !v.IsStart {
+			listen_idlist = append(listen_idlist, v.ID)
+		}
+	}
+	for _, v := range c.conntion_list {
+		v.Con.Close()
+		if !v.IsStart {
+			conntion_idlist = append(conntion_idlist, v.ID)
+		}
+	}
 
+	for _, v := range listen_idlist {
+		delete(c.listener_list, v)
+	}
+	for _, v := range conntion_idlist {
+		delete(c.conntion_list, v)
+	}
+}
 func (c *NetEngine) get_remote_addr(id int) (addr net.Addr, r bool) {
 	addr = nil
 	r = false
