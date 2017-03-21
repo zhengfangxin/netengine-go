@@ -14,6 +14,7 @@ for_loop:
 		if is_stop {
 			timeout = time.Second
 		}
+		timer := time.NewTimer(timeout)
 		select {
 		case r := <-c.send_chan:
 			c.send_data(r.ID, r.Data)
@@ -56,13 +57,17 @@ for_loop:
 			stop_req = r
 			is_stop = true
 			c.closeall()
-		case <-time.After(timeout):
+		case <-timer.C:
+			timer = nil
 			if is_stop {
 				c.closeall()
 				if len(c.conntion_list)+len(c.listener_list) <= 0 {
 					break for_loop
 				}
 			}
+		}
+		if timer != nil && !timer.Stop() {
+			<-timer.C
 		}
 	}
 	stop_req.ch <- 0

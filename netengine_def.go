@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const default_buf_len = 1024 * 124
+const default_buf_len = 1024 * 1024
 const default_timeout = 120 // second
 
 type NetNotify interface {

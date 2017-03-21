@@ -52,6 +52,7 @@ func (c *NetEngine) Stop() {
 }
 
 func (c *NetEngine) GetRemoteAddr(id int) (net.Addr, bool) {
+	defer recover()
 	var msg get_addr_msg
 	msg.ID = id
 	msg.ch = make(chan net.Addr)
@@ -65,6 +66,7 @@ func (c *NetEngine) GetRemoteAddr(id int) (net.Addr, bool) {
 	return addr, true
 }
 func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
+	defer recover()
 	var msg get_addr_msg
 	msg.ID = id
 	msg.ch = make(chan net.Addr)
@@ -80,6 +82,7 @@ func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
 
 // default：1m
 func (c *NetEngine) SetBuffer(id int, maxSendBufLen int) {
+	defer recover()
 	var msg set_buf_msg
 	msg.ID = id
 	msg.MaxSendBufLen = maxSendBufLen
@@ -89,6 +92,7 @@ func (c *NetEngine) SetBuffer(id int, maxSendBufLen int) {
 
 // default：1m,send,recv:true
 func (c *NetEngine) SetCloseTime(id int, close_second int, send, recv bool) {
+	defer recover()
 	var msg set_closetime_msg
 	msg.ID = id
 	msg.CloseSecond = close_second
@@ -98,6 +102,7 @@ func (c *NetEngine) SetCloseTime(id int, close_second int, send, recv bool) {
 	c.set_closetime_chan <- msg
 }
 func (c *NetEngine) Listen(net, addr string) (id int, err error) {
+	defer recover()
 	var msg listen_msg
 	msg.Net = net
 	msg.Addr = addr
@@ -112,6 +117,7 @@ func (c *NetEngine) Listen(net, addr string) (id int, err error) {
 	return r.ID, r.err
 }
 func (c *NetEngine) ConnectTo(net, addr string) (id int, err error) {
+	defer recover()
 	var msg connect_msg
 	msg.Net = net
 	msg.Addr = addr
@@ -132,6 +138,7 @@ SetBuffer;SetCloseTime
 Start
 */
 func (c *NetEngine) Start(id int) {
+	defer recover()
 	var msg start_msg
 	msg.ID = id
 
@@ -140,6 +147,7 @@ func (c *NetEngine) Start(id int) {
 
 // Send is asynchronous
 func (c *NetEngine) Send(id int, data []byte) {
+	defer recover()
 	var msg send_msg
 	msg.ID = id
 	msg.Data = data
@@ -148,6 +156,7 @@ func (c *NetEngine) Send(id int, data []byte) {
 }
 
 func (c *NetEngine) Close(id int) {
+	defer recover()
 	var msg close_msg
 	msg.ID = id
 
