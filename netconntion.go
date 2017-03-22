@@ -2,7 +2,7 @@ package netengine
 
 import (
 	"bytes"
-	//"fmt"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -31,7 +31,7 @@ func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, rec
 	n.Timeout = timeout
 	n.RecvValid = recv
 	n.SendValid = send
-	n.SendChan = make(chan []byte, 128)
+	n.SendChan = make(chan []byte, 8)
 	n.IsStart = false
 
 	c.conntion_list[n.ID] = n
@@ -141,13 +141,16 @@ func (c *NetEngine) conntion_write(con *conntion) {
 	go conntion_write_net(con, data_chan)
 
 	datalen := 0
-	data := make([][]byte, 0, 100)
+	data := make([][]byte, 0, 1)
 
 	is_closed := false
 for_loop:
 	for {
 		maxBufLen := int(atomic.LoadInt32(&con.MaxBufLen))
 		timer := time.NewTimer(time.Hour)
+		if len(data) > 3 {
+			fmt.Println("data buf", len(data), datalen)
+		}
 		if len(data) > 0 {
 			s := data[0]
 			select {
@@ -197,6 +200,7 @@ for_loop:
 func conntion_write_net(con *conntion, data chan []byte) {
 	netcon := con.Con
 	defer netcon.Close()
+loop1:
 	for d := range data {
 		send := atomic.LoadInt32(&con.SendValid)
 		if send != 0 {
@@ -205,9 +209,17 @@ func conntion_write_net(con *conntion, data chan []byte) {
 			netcon.SetWriteDeadline(time.Now().Add(add))
 		} else {
 		}
-		_, err := netcon.Write(d)
-		if err != nil {
-			break
+		for {
+			n, err := netcon.Write(d)
+			if err != nil {
+				break loop1
+			}
+			if n == len(d) {
+				break
+			} else {
+				fmt.Println("write return", n, len(d))
+				d = d[n:]
+			}
 		}
 	}
 }

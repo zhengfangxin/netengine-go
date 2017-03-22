@@ -3,13 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/zhengfangxin/netengine"
-	"log"
+	//"log"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
+	//"net/http"
+	//_ "net/http/pprof"
 	"runtime"
-	"runtime/pprof"
+	//"runtime/debug"
 	"time"
 )
 
@@ -28,7 +27,7 @@ var server_chan chan servermsg
 
 func main() {
 	go func() {
-		http.ListenAndServe("localhost:6060", nil)
+		//http.ListenAndServe("localhost:6060", nil)
 	}()
 
 	server = new(netengine.NetEngine)
@@ -45,16 +44,11 @@ func main() {
 	add_server(server, "tcp", "127.0.0.1:9000")
 	add_server(server, "tcp", "127.0.0.1:9001")
 
-	for i := 0; i < 500000; i++ {
-		time.Sleep(time.Second)
+	for {
+		time.Sleep(time.Second * 5)
+		//runtime.GC()
+		//debug.FreeOSMemory()
 	}
-
-	f, err := os.Create("mem.mprof")
-	if err != nil {
-		log.Fatal(err)
-	}
-	pprof.WriteHeapProfile(f)
-	f.Close()
 }
 
 func add_server(neten *netengine.NetEngine, nettype, addr string) {

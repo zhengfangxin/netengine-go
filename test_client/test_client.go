@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	//"runtime"
+	//"runtime/debug"
 	"time"
 )
 
@@ -23,33 +25,42 @@ var client *netengine.NetEngine
 var client_list map[int]int
 var client_chan chan clientmsg
 var client_len chan int
+var client_send_ch chan int
+
+func check_panic() {
+
+}
+
+const conntion_count = 10000
 
 func main() {
 	go func() {
 		http.ListenAndServe("localhost:6061", nil)
 	}()
+	defer check_panic()
 
 	client = new(netengine.NetEngine)
 	var clinotify clientnotify
 	client.Init(&clinotify)
 
 	client_list = make(map[int]int)
-	client_chan = make(chan clientmsg, 1024)
-	client_len = make(chan int, 10000)
+	client_chan = make(chan clientmsg, 128)
+	client_len = make(chan int, 128)
+	client_send_ch = make(chan int)
 
 	go client_run()
 
-	for i := 0; i < 1; i++ {
-		if i%2 == 0 {
-			//add_client(client, "tcp", "127.0.0.1:9000")
-		}
+	for i := 0; i < conntion_count/2; i++ {
+		add_client(client, "tcp", "127.0.0.1:9000")
 		add_client(client, "tcp", "127.0.0.1:9001")
 	}
 
-	go send_run(client)
+	//go send_run()
 
 	for {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 5)
+		//runtime.GC()
+		//debug.FreeOSMemory()
 	}
 }
 
@@ -75,36 +86,38 @@ func send_req(neten *netengine.NetEngine, id int, data []byte) {
 	var flag uint8 = pro_flag
 	binary.Write(&buf, binary.LittleEndian, flag)
 	buf.Write(data)
-	//neten.Send(id, buf.Bytes())
+	all_len := buf.Len()
+	sendd := make([]byte, all_len)
+	copy(sendd, buf.Bytes())
+	neten.Send(id, sendd)
 }
-func send_run(neten *netengine.NetEngine) {
-	count := 1
+func send_run() {
+	defer check_panic()
+
+	count := 0
 	for {
-		for _, v := range client_list {
-			n := rand.Intn(1024)
-			data := make([]byte, n)
-			send_req(neten, v, data)
-		}
+		n := rand.Intn(1024)
+		client_send_ch <- n
+
 		time.Sleep(time.Second)
 		count = count + 1
-		/*if count > 5 {
-			fmt.Println("close")
-			for _, v := range client_list {
-				neten.Close(v)
-			}
-
-			break
-		}*/
 	}
 }
 
 func client_run() {
+	defer check_panic()
+
 	datalen := 0
 	count := 0
 	last := time.Now()
 	for {
 		timer := time.NewTimer(time.Second * 3)
 		select {
+		case d := <-client_send_ch:
+			data := make([]byte, d)
+			for _, v := range client_list {
+				send_req(client, v, data)
+			}
 		case d, ok := <-client_chan:
 			if !ok {
 				return
@@ -112,6 +125,13 @@ func client_run() {
 			if d.add {
 				id := d.id
 				client_list[id] = id
+				if len(client_list) >= conntion_count {
+					fmt.Println("start send", len(client_list))
+					data := make([]byte, 100)
+					for _, v := range client_list {
+						send_req(client, v, data)
+					}
+				}
 			} else {
 				id := d.id
 				delete(client_list, id)
@@ -126,13 +146,13 @@ func client_run() {
 			sub := cur.Sub(last)
 			if sub > time.Second*3 {
 				last = cur
-				fmt.Println("client", len(client_list), datalen, count)
+				fmt.Println("client", len(client_list), datalen/3, count/3)
 				datalen = 0
 				count = 1
 			}
 		case <-timer.C:
 			timer = nil
-			fmt.Println("client", len(client_list), datalen)
+			fmt.Println("client", len(client_list), datalen/3, datalen/3)
 			datalen = 0
 		}
 		if timer != nil && !timer.Stop() {
@@ -170,7 +190,7 @@ func (c *clientnotify) OnRecv(id int, data []byte) int {
 		fmt.Println("read", err)
 	}
 	if flag != pro_flag {
-		fmt.Println("flag error", flag, pro_flag)
+		fmt.Println("recv flag error", flag, pro_flag)
 	}
 	all_len := int(packlen) + headlen
 	if datalen < all_len {
@@ -178,6 +198,9 @@ func (c *clientnotify) OnRecv(id int, data []byte) int {
 	}
 
 	client_len <- all_len
+
+	client.Send(id, data[:all_len])
+
 	return all_len
 }
 func (c *clientnotify) OnClosed(id int) {
