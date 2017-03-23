@@ -43,7 +43,7 @@ func main() {
 		add_client(client, "tcp", "127.0.0.1:9001")
 	}
 
-	go send_run()
+	//go send_run()
 
 	for {
 		time.Sleep(time.Second * 5)
@@ -78,13 +78,12 @@ func send_req(neten *netengine.NetEngine, id int, data []byte) {
 	neten.Send(id, sendd)
 }
 func send_run() {
-	count := 0
-	for {
+	time.Sleep(time.Second * 3)
+	for i := 0; i < 5; i++ {
 		n := rand.Intn(1024)
 		client_send_ch <- n
 
 		time.Sleep(time.Second)
-		count = count + 1
 	}
 }
 
@@ -101,6 +100,7 @@ func client_run() {
 			for _, v := range client_list {
 				send_req(client, v, data)
 			}
+			go send_run()
 		case d, ok := <-client_chan:
 			if !ok {
 				return
