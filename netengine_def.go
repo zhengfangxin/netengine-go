@@ -19,7 +19,7 @@ type NetNotify interface {
 	return >0 to consume data
 	return 0 need more data
 	use send go send data get more performance
-	data is valid only in OnRecv, so to careful use it,
+	data is valid only in OnRecv, so careful to use it
 	*/
 	OnRecv(id int, data []byte, send SendFunc) int
 
