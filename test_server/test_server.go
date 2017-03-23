@@ -1,16 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/zhengfangxin/netengine"
-	//"log"
 	"net"
-	//"net/http"
-	//_ "net/http/pprof"
 	"runtime"
-	//"runtime/debug"
 	"time"
 )
+
+const pro_flag = 0xef
 
 type servernotify struct {
 }
@@ -26,10 +26,6 @@ var id_listenid map[int]int
 var server_chan chan servermsg
 
 func main() {
-	go func() {
-		//http.ListenAndServe("localhost:6060", nil)
-	}()
-
 	server = new(netengine.NetEngine)
 	var sernotify servernotify
 
@@ -46,8 +42,6 @@ func main() {
 
 	for {
 		time.Sleep(time.Second * 5)
-		//runtime.GC()
-		//debug.FreeOSMemory()
 	}
 }
 
@@ -108,10 +102,39 @@ func (c *servernotify) OnAccept(listenid int, id int, addr net.Addr) {
 	msg := servermsg{true, id, listenid}
 	server_chan <- msg
 }
-func (c *servernotify) OnRecv(id int, data []byte) int {
+func (c *servernotify) OnRecv(id int, data []byte, send netengine.SendFunc) int {
 	//fmt.Printf("recv data id:%d len:%d\n", id, len(data))
-	server.Send(id, data)
-	return len(data)
+	datalen := len(data)
+	const headlen = 3
+	if datalen < headlen {
+		return 0
+	}
+	buf := bytes.NewBuffer(data)
+	var packlen int16
+	var flag uint8
+	err := binary.Read(buf, binary.LittleEndian, &packlen)
+	if err != nil {
+		fmt.Println("read", err)
+	}
+	err = binary.Read(buf, binary.LittleEndian, &flag)
+	if err != nil {
+		fmt.Println("read", err)
+	}
+	if flag != pro_flag {
+		fmt.Println("recv flag error", flag, pro_flag)
+		panic("flag error")
+	}
+	all_len := int(packlen) + headlen
+	if datalen < all_len {
+		return 0
+	}
+
+	sendd := make([]byte, all_len)
+	copy(sendd, data[:all_len])
+	//server.Send(id, sendd)
+	send(sendd)
+
+	return all_len
 }
 func (c *servernotify) OnClosed(id int) {
 	//fmt.Printf("on closed id:%d\n", id)

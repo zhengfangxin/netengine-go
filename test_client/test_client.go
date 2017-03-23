@@ -7,10 +7,6 @@ import (
 	"github.com/zhengfangxin/netengine"
 	"math/rand"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
-	//"runtime"
-	//"runtime/debug"
 	"time"
 )
 
@@ -27,17 +23,9 @@ var client_chan chan clientmsg
 var client_len chan int
 var client_send_ch chan int
 
-func check_panic() {
-
-}
-
 const conntion_count = 10000
 
 func main() {
-	go func() {
-		http.ListenAndServe("localhost:6061", nil)
-	}()
-	defer check_panic()
 
 	client = new(netengine.NetEngine)
 	var clinotify clientnotify
@@ -55,12 +43,10 @@ func main() {
 		add_client(client, "tcp", "127.0.0.1:9001")
 	}
 
-	//go send_run()
+	go send_run()
 
 	for {
 		time.Sleep(time.Second * 5)
-		//runtime.GC()
-		//debug.FreeOSMemory()
 	}
 }
 
@@ -92,8 +78,6 @@ func send_req(neten *netengine.NetEngine, id int, data []byte) {
 	neten.Send(id, sendd)
 }
 func send_run() {
-	defer check_panic()
-
 	count := 0
 	for {
 		n := rand.Intn(1024)
@@ -105,7 +89,6 @@ func send_run() {
 }
 
 func client_run() {
-	defer check_panic()
 
 	datalen := 0
 	count := 0
@@ -171,7 +154,7 @@ func (c *clientnotify) OnAcceptBefore(listenid int, addr net.Addr) bool {
 func (c *clientnotify) OnAccept(listenid int, id int, addr net.Addr) {
 	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
 }
-func (c *clientnotify) OnRecv(id int, data []byte) int {
+func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int {
 	//fmt.Printf("recv data id:%d len:%d\n", id, len(data))
 	datalen := len(data)
 	const headlen = 3
@@ -191,6 +174,7 @@ func (c *clientnotify) OnRecv(id int, data []byte) int {
 	}
 	if flag != pro_flag {
 		fmt.Println("recv flag error", flag, pro_flag)
+		panic("flag error")
 	}
 	all_len := int(packlen) + headlen
 	if datalen < all_len {
@@ -199,7 +183,10 @@ func (c *clientnotify) OnRecv(id int, data []byte) int {
 
 	client_len <- all_len
 
-	client.Send(id, data[:all_len])
+	sendd := make([]byte, all_len)
+	copy(sendd, data[:all_len])
+	//client.Send(id, sendd)
+	send(sendd)
 
 	return all_len
 }

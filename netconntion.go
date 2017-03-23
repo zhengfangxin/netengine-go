@@ -1,7 +1,6 @@
 package netengine
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -86,12 +85,42 @@ func (c *NetEngine) conntion_run(con *conntion) {
 
 	c.del_conntion_chan <- con.ID
 }
+func get_send(con *conntion) SendFunc {
+	r := func(d []byte) error {
+		netcon := con.Con
+		send := atomic.LoadInt32(&con.SendValid)
+		if send != 0 {
+			timeout := atomic.LoadInt32(&con.Timeout)
+			add := time.Second * time.Duration(timeout)
+			netcon.SetWriteDeadline(time.Now().Add(add))
+		} else {
+		}
+		for {
+			n, err := netcon.Write(d)
+			if err != nil {
+				netcon.Close()
+				return err
+			}
+			if n == len(d) {
+				break
+			} else {
+				fmt.Println("write return", n, len(d))
+				d = d[n:]
+			}
+		}
+		return nil
+	}
+	return r
+}
 func (c *NetEngine) conntion_recv(con *conntion) {
-	var buf bytes.Buffer
 	net_con := con.Con
 	defer net_con.Close()
 
+	send_fun := get_send(con)
+
 	all_buf := make([]byte, 1024*5)
+	valid_begin_pos := 0
+	valid_end_pos := 0
 recv_loop:
 	for {
 		recv := atomic.LoadInt32(&con.RecvValid)
@@ -102,26 +131,45 @@ recv_loop:
 		} else {
 		}
 
-		n, err := net_con.Read(all_buf)
+		if valid_end_pos >= len(all_buf) {
+			if valid_begin_pos > 2048 {
+				copy(all_buf, all_buf[valid_begin_pos:valid_end_pos])
+			} else {
+				all_len := len(all_buf)
+				org_buf := all_buf
+				all_buf = make([]byte, all_len*2)
+				copy(all_buf, org_buf[valid_begin_pos:valid_end_pos])
+			}
+			valid_end_pos = valid_end_pos - valid_begin_pos
+			valid_begin_pos = 0
+		}
+
+		currecv := all_buf[valid_end_pos:len(all_buf)]
+		n, err := net_con.Read(currecv)
 		if err != nil {
 			break
 		}
-		cur := all_buf[:n]
-		buf.Write(cur)
-		var recvd = buf.Bytes()
+		valid_end_pos = valid_end_pos + n
 
 		for {
-			r := c.notify.OnRecv(con.ID, recvd)
+			curdata := all_buf[valid_begin_pos:valid_end_pos]
+			r := c.notify.OnRecv(con.ID, curdata, send_fun)
+
 			if r < 0 {
 				break recv_loop
 			}
 			if r > 0 {
-				recvd = recvd[r:]
-				buf.Reset()
-				buf.Write(recvd)
+				if r > len(curdata) {
+					break recv_loop
+				}
+				valid_begin_pos = valid_begin_pos + r
 			} else {
 				break
 			}
+		}
+		if valid_begin_pos == valid_end_pos {
+			valid_begin_pos = 0
+			valid_end_pos = 0
 		}
 	}
 }
@@ -148,9 +196,6 @@ for_loop:
 	for {
 		maxBufLen := int(atomic.LoadInt32(&con.MaxBufLen))
 		timer := time.NewTimer(time.Hour)
-		if len(data) > 3 {
-			fmt.Println("data buf", len(data), datalen)
-		}
 		if len(data) > 0 {
 			s := data[0]
 			select {
