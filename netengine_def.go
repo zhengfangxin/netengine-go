@@ -38,6 +38,7 @@ type conntion struct {
 	SendValid int32
 	RecvValid int32
 	IsStart   bool
+	Send      SendFunc
 }
 type listener struct {
 	ID        int
@@ -70,6 +71,7 @@ type NetEngine struct {
 	connect_chan         chan connect_msg
 	start_chan           chan start_msg
 	send_chan            chan send_msg
+	get_sendfunc_chan    chan get_sendfunc_msg
 	close_chan           chan close_msg
 }
 
@@ -119,6 +121,10 @@ type start_msg struct {
 type send_msg struct {
 	ID   int
 	Data []byte
+}
+type get_sendfunc_msg struct {
+	ID int
+	ch chan SendFunc
 }
 type close_msg struct {
 	ID int

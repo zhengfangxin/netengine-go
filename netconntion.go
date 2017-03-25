@@ -22,6 +22,33 @@ func (c *NetEngine) connectto(nettype, addr string) (int, error) {
 
 	return r.ID, nil
 }
+func get_send(con *conntion) SendFunc {
+	r := func(d []byte) error {
+		netcon := con.Con
+		send := atomic.LoadInt32(&con.SendValid)
+		if send != 0 {
+			timeout := atomic.LoadInt32(&con.Timeout)
+			add := time.Second * time.Duration(timeout)
+			netcon.SetWriteDeadline(time.Now().Add(add))
+		} else {
+		}
+		for {
+			n, err := netcon.Write(d)
+			if err != nil {
+				netcon.Close()
+				return err
+			}
+			if n == len(d) {
+				break
+			} else {
+				fmt.Println("write return", n, len(d))
+				d = d[n:]
+			}
+		}
+		return nil
+	}
+	return r
+}
 func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, recv int32) *conntion {
 	n := new(conntion)
 	n.ID = c.get_id()
@@ -32,6 +59,7 @@ func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, rec
 	n.SendValid = send
 	n.SendChan = make(chan []byte, 8)
 	n.IsStart = false
+	n.Send = get_send(n)
 
 	c.conntion_list[n.ID] = n
 
@@ -85,38 +113,12 @@ func (c *NetEngine) conntion_run(con *conntion) {
 
 	c.del_conntion_chan <- con.ID
 }
-func get_send(con *conntion) SendFunc {
-	r := func(d []byte) error {
-		netcon := con.Con
-		send := atomic.LoadInt32(&con.SendValid)
-		if send != 0 {
-			timeout := atomic.LoadInt32(&con.Timeout)
-			add := time.Second * time.Duration(timeout)
-			netcon.SetWriteDeadline(time.Now().Add(add))
-		} else {
-		}
-		for {
-			n, err := netcon.Write(d)
-			if err != nil {
-				netcon.Close()
-				return err
-			}
-			if n == len(d) {
-				break
-			} else {
-				fmt.Println("write return", n, len(d))
-				d = d[n:]
-			}
-		}
-		return nil
-	}
-	return r
-}
+
 func (c *NetEngine) conntion_recv(con *conntion) {
 	net_con := con.Con
 	defer net_con.Close()
 
-	send_fun := get_send(con)
+	send_fun := con.Send
 
 	all_buf := make([]byte, 1024*5)
 	valid_begin_pos := 0
@@ -245,26 +247,11 @@ for_loop:
 func conntion_write_net(con *conntion, data chan []byte) {
 	netcon := con.Con
 	defer netcon.Close()
-loop1:
+
 	for d := range data {
-		send := atomic.LoadInt32(&con.SendValid)
-		if send != 0 {
-			timeout := atomic.LoadInt32(&con.Timeout)
-			add := time.Second * time.Duration(timeout)
-			netcon.SetWriteDeadline(time.Now().Add(add))
-		} else {
-		}
-		for {
-			n, err := netcon.Write(d)
-			if err != nil {
-				break loop1
-			}
-			if n == len(d) {
-				break
-			} else {
-				fmt.Println("write return", n, len(d))
-				d = d[n:]
-			}
+		err := con.Send(d)
+		if err != nil {
+			break
 		}
 	}
 }

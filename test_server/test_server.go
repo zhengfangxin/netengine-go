@@ -129,10 +129,12 @@ func (c *servernotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 		return 0
 	}
 
-	sendd := make([]byte, all_len)
-	copy(sendd, data[:all_len])
-	//server.Send(id, sendd)
-	send(sendd)
+	//sendd := make([]byte, all_len)
+	//copy(sendd, data[:all_len])
+	send_d := data[:all_len]
+
+	//server.Send(id, send_d)
+	send(send_d)
 
 	return all_len
 }

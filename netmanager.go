@@ -1,6 +1,7 @@
 package netengine
 
 import (
+	"fmt"
 	"net"
 	"time"
 )
@@ -45,6 +46,9 @@ for_loop:
 			} else {
 				r.ch <- nil
 			}
+		case r := <-c.get_sendfunc_chan:
+			f := c.get_send_func(r.ID)
+			r.ch <- f
 		case r := <-c.set_buf_chan:
 			c.set_buf(r.ID, r.MaxSendBufLen)
 		case r := <-c.set_closetime_chan:
@@ -191,4 +195,15 @@ func (c *NetEngine) close(id int) {
 	if ok {
 		c.close_conntion(con)
 	}
+}
+func (c *NetEngine) get_send_func(id int) SendFunc {
+	con, ok := c.conntion_list[id]
+	if ok {
+		if con.Send == nil {
+			panic("send func error")
+		}
+		return con.Send
+	}
+	fmt.Println("get func", id, nil)
+	return nil
 }

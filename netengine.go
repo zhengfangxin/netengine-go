@@ -1,9 +1,9 @@
 package netengine
 
 import (
-	"net"
-	//"time"
 	"errors"
+	"fmt"
+	"net"
 	"sync"
 )
 
@@ -26,6 +26,7 @@ func (c *NetEngine) Init(notify NetNotify) error {
 	c.connect_chan = make(chan connect_msg)
 	c.start_chan = make(chan start_msg)
 	c.send_chan = make(chan send_msg, 1024)
+	c.get_sendfunc_chan = make(chan get_sendfunc_msg)
 	c.close_chan = make(chan close_msg)
 
 	go c.manage_run()
@@ -150,9 +151,30 @@ func (c *NetEngine) Send(id int, data []byte) {
 	defer recover()
 	var msg send_msg
 	msg.ID = id
-	msg.Data = data
+	msg.Data = make([]byte, len(data))
+	copy(msg.Data, data)
 
 	c.send_chan <- msg
+}
+
+// SendFunc is synchronous
+func (c *NetEngine) GetSendFunc(id int) SendFunc {
+	defer recover()
+	var msg get_sendfunc_msg
+	msg.ID = id
+	msg.ch = make(chan SendFunc)
+
+	c.get_sendfunc_chan <- msg
+
+	r, ok := <-msg.ch
+	if !ok {
+		fmt.Println("can't get send func")
+		return nil
+	}
+	if r == nil {
+		fmt.Println("can't get nil send func")
+	}
+	return r
 }
 
 func (c *NetEngine) Close(id int) {

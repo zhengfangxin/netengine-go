@@ -65,17 +65,23 @@ func add_client(neten *netengine.NetEngine, nettype, addr string) {
 	neten.Start(id)
 }
 
-func send_req(neten *netengine.NetEngine, id int, data []byte) {
+func send_req(neten *netengine.NetEngine, id int, data []byte, send netengine.SendFunc) {
 	var buf bytes.Buffer
+
 	datalen := int16(len(data))
 	binary.Write(&buf, binary.LittleEndian, datalen)
+
 	var flag uint8 = pro_flag
 	binary.Write(&buf, binary.LittleEndian, flag)
+
 	buf.Write(data)
-	all_len := buf.Len()
-	sendd := make([]byte, all_len)
-	copy(sendd, buf.Bytes())
-	neten.Send(id, sendd)
+
+	send_d := buf.Bytes()
+	if send == nil {
+		neten.Send(id, send_d)
+	} else {
+		send(send_d)
+	}
 }
 func send_run() {
 	time.Sleep(time.Second * 3)
@@ -98,9 +104,9 @@ func client_run() {
 		case d := <-client_send_ch:
 			data := make([]byte, d)
 			for _, v := range client_list {
-				send_req(client, v, data)
+				send_req(client, v, data, nil)
 			}
-			go send_run()
+			//go send_run()
 		case d, ok := <-client_chan:
 			if !ok {
 				return
@@ -112,7 +118,12 @@ func client_run() {
 					fmt.Println("start send", len(client_list))
 					data := make([]byte, 100)
 					for _, v := range client_list {
-						send_req(client, v, data)
+						send := client.GetSendFunc(v)
+						if send == nil {
+							fmt.Println("get nil send func", v)
+							continue
+						}
+						send_req(client, v, data, send)
 					}
 				}
 			} else {
@@ -183,10 +194,12 @@ func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 
 	client_len <- all_len
 
-	sendd := make([]byte, all_len)
-	copy(sendd, data[:all_len])
-	//client.Send(id, sendd)
-	send(sendd)
+	//sendd := make([]byte, all_len)
+	//copy(sendd, data[:all_len])
+	send_d := data[:all_len]
+
+	//client.Send(id, send_d)
+	send(send_d)
 
 	return all_len
 }
