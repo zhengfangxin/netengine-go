@@ -193,7 +193,6 @@ func (c *NetEngine) conntion_write(con *conntion) {
 	datalen := 0
 	data := make([][]byte, 0, 1)
 
-	is_closed := false
 for_loop:
 	for {
 		maxBufLen := int(atomic.LoadInt32(&con.MaxBufLen))
@@ -208,11 +207,8 @@ for_loop:
 				datalen += len(msg)
 				data = append(data, msg)
 				if datalen > maxBufLen {
-					if !is_closed {
-						is_closed = true
-						c.notify.OnBufferLimit(con.ID)
-						con.Con.Close()
-					}
+					c.notify.OnBufferLimit(con.ID)
+					break for_loop
 				}
 			case data_chan <- s:
 				data = data[1:]
@@ -229,11 +225,8 @@ for_loop:
 				datalen += len(msg)
 				data = append(data, msg)
 				if datalen > maxBufLen {
-					if !is_closed {
-						is_closed = true
-						c.notify.OnBufferLimit(con.ID)
-						con.Con.Close()
-					}
+					c.notify.OnBufferLimit(con.ID)
+					break for_loop
 				}
 			case <-timer.C:
 				timer = nil
