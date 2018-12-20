@@ -30,6 +30,13 @@ type NetNotify interface {
 neten := new(NetEngine)
 neten.Init(notify)
 id,err := neten.Listen("tcp", "127.0.0.1:9000")
+
+// set buf len, read write timeout when accepted the conntions have this attribute
+// set max write buffer len, close when over, set recv buf len
+neten.SetBuffer(id, 1024*1024, 50*1024)
+// set read write timeout, when timeout it close the socket
+neten.SetTimeout(id, time.Second*10, 0)
+
 neten.Start(id)
 ```
 ## client
@@ -37,10 +44,10 @@ neten.Start(id)
 neten := new(NetEngine)
 neten.Init(notify)
 id,err := neten.ConnectTo("tcp", "127.0.0.1:9000")
-// set max write buffer len, close when over
-neten.SetBuffer(id, 1024*1024)
-// set max read write idle time(second), you can control write or read who can update the valid time
-neten.SetCloseTime(id, 30, true, true)
+// set max write buffer len, close when over, set recv buf len
+neten.SetBuffer(id, 1024*1024, 50*1024)
+// set read write timeout, when timeout it close the socket
+neten.SetTimeout(id, time.Second*10, 0)
 neten.Start(id)
 // send is asynchronous
 neten.Send(id, data)
