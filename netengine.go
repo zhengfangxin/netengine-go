@@ -8,11 +8,10 @@ import (
 	"time"
 )
 
-func (c *NetEngine) Init(notify NetNotify) error {
+func (c *NetEngine) Init() error {
 	c.conntion_list = make(map[int]*conntion)
 	c.listener_list = make(map[int]*listener)
 	c.id = 1
-	c.notify = notify
 	c.lock = new(sync.Mutex)
 
 	c.add_conntion_chan = make(chan add_conntion_msg)
@@ -103,11 +102,12 @@ func (c *NetEngine) SetTimeout(id int, read,write time.Duration) {
 
 	c.set_timeout_chan <- msg
 }
-func (c *NetEngine) Listen(net, addr string) (id int, err error) {
+func (c *NetEngine) Listen(net, addr string, notify NetNotify) (id int, err error) {
 	defer recover()
 	var msg listen_msg
 	msg.Net = net
 	msg.Addr = addr
+	msg.Notify = notify
 	msg.ch = make(chan listen_ret_msg)
 
 	c.listen_chan <- msg
@@ -118,7 +118,7 @@ func (c *NetEngine) Listen(net, addr string) (id int, err error) {
 	}
 	return r.ID, r.err
 }
-func (c *NetEngine) ConnectTo(net, addr string) (id int, err error) {
+func (c *NetEngine) ConnectTo(net, addr string, notify NetNotify) (id int, err error) {
 	defer recover()
 	var msg connect_msg
 	msg.Net = net

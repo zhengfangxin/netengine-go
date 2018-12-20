@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func (c *NetEngine) listen(nettype, addr string) (int, error) {
+func (c *NetEngine) listen(nettype, addr string, notify NetNotify) (int, error) {
 	tcpaddr, err := net.ResolveTCPAddr(nettype, addr)
 	if err != nil {
 		return 0, err
@@ -19,6 +19,7 @@ func (c *NetEngine) listen(nettype, addr string) (int, error) {
 	n := new(listener)
 	n.ID = c.get_id()
 	n.Listen = tcplisten
+	n.Notify = notify
 	n.MaxBufLen = default_max_buf_len
 	n.RecvBufLen = default_read_buf_len
 	n.ReadTimeout = 0
@@ -55,6 +56,8 @@ func (c *NetEngine) accept_run(lis *listener) {
 		c.del_conntion_chan <- lis.ID
 	}()
 
+	notify := lis.Notify
+
 	for {
 		con, err := listen.AcceptTCP()
 		if err != nil {
@@ -62,7 +65,7 @@ func (c *NetEngine) accept_run(lis *listener) {
 		}
 
 		addr := con.RemoteAddr()
-		r := c.notify.OnAcceptBefore(lis.ID, addr)
+		r := notify.OnAcceptBefore(lis.ID, addr)
 		if !r {
 			con.Close()
 			continue
@@ -75,6 +78,7 @@ func (c *NetEngine) accept_run(lis *listener) {
 
 		var msg add_conntion_msg
 		msg.Con = con
+		msg.Notify = notify
 		msg.MaxBufLen = maxBufLen
 		msg.RecvBufLen = recvBufLen
 		msg.ReadTimeout = readTimeout
@@ -84,9 +88,9 @@ func (c *NetEngine) accept_run(lis *listener) {
 
 		ncon := <-msg.ch
 
-		c.notify.OnAccept(lis.ID, ncon.ID, addr)
+		notify.OnAccept(lis.ID, ncon.ID, addr)
 
 		c.start_conntion(ncon)
 	}
-	c.notify.OnClosed(lis.ID)
+	notify.OnClosed(lis.ID)
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c *NetEngine) connectto(nettype, addr string) (int, error) {
+func (c *NetEngine) connectto(nettype, addr string, notify NetNotify) (int, error) {
 	tcpaddr, err := net.ResolveTCPAddr(nettype, addr)
 	if err != nil {
 		return 0, err
@@ -18,7 +18,7 @@ func (c *NetEngine) connectto(nettype, addr string) (int, error) {
 		return 0, err
 	}
 
-	r := c.add_conntion(con, default_max_buf_len, default_read_buf_len, 0, 0)
+	r := c.add_conntion(con, notify, default_max_buf_len, default_read_buf_len, 0, 0)
 
 	return r.ID, nil
 }
@@ -50,10 +50,11 @@ func get_send(con *conntion) SendFunc {
 	}
 	return r
 }
-func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen,recvBufLen int32, readTimeout,writeTimeout time.Duration) *conntion {
+func (c *NetEngine) add_conntion(con *net.TCPConn, notify NetNotify, maxBufLen,recvBufLen int32, readTimeout,writeTimeout time.Duration) *conntion {
 	n := new(conntion)
 	n.ID = c.get_id()
 	n.Con = con
+	n.Notify = notify
 	n.MaxBufLen = maxBufLen
 	n.RecvBufLen = recvBufLen
 	n.ReadTimeout = readTimeout
@@ -89,7 +90,7 @@ func (c *NetEngine) conntion_run(con *conntion) {
 	go c.conntion_write(con)
 	c.conntion_recv(con)
 
-	c.notify.OnClosed(con.ID)
+	con.Notify.OnClosed(con.ID)
 
 	c.del_conntion_chan <- con.ID
 }
@@ -103,14 +104,13 @@ func (c *NetEngine) conntion_recv(con *conntion) {
 	buflen := int(con.RecvBufLen)
 	all_buf := make([]byte, buflen)	
 	
-	fmt.Println("read buf", buflen)
+	notify := con.Notify
 
 	valid_begin_pos := 0
 	valid_end_pos := 0
 recv_loop:
 	for {
 		readTimeout := con.ReadTimeout
-		fmt.Println("read timeout", readTimeout)
 		if readTimeout != 0 {
 			net_con.SetReadDeadline(time.Now().Add(readTimeout))
 		}
@@ -137,7 +137,7 @@ recv_loop:
 
 		for {
 			curdata := all_buf[valid_begin_pos:valid_end_pos]
-			r := c.notify.OnRecv(con.ID, curdata, send_fun)
+			r := notify.OnRecv(con.ID, curdata, send_fun)
 
 			if r < 0 {
 				break recv_loop
@@ -172,11 +172,11 @@ func (c *NetEngine) conntion_write(con *conntion) {
 
 	go conntion_write_net(con, data_chan)
 
+	notify := con.Notify
+
 	datalen := 0
 	data := make([][]byte, 0, 1)
 	maxBufLen := int(con.MaxBufLen)
-
-	fmt.Println("max buf", maxBufLen)
 
 for_loop:
 	for {		
@@ -191,7 +191,7 @@ for_loop:
 				datalen += len(msg)
 				data = append(data, msg)
 				if datalen > maxBufLen {
-					c.notify.OnBufferLimit(con.ID)
+					notify.OnBufferLimit(con.ID)
 					break for_loop
 				}
 			case data_chan <- s:
@@ -209,7 +209,7 @@ for_loop:
 				datalen += len(msg)
 				data = append(data, msg)
 				if datalen > maxBufLen {
-					c.notify.OnBufferLimit(con.ID)
+					notify.OnBufferLimit(con.ID)
 					break for_loop
 				}
 			case <-timer.C:

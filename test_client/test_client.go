@@ -22,14 +22,15 @@ var client_list map[int]int
 var client_chan chan clientmsg
 var client_len chan int
 var client_send_ch chan int
+var clinotify clientnotify
 
 const conntion_count = 2
 
 func main() {
 
 	client = new(netengine.NetEngine)
-	var clinotify clientnotify
-	client.Init(&clinotify)
+	
+	client.Init()
 
 	client_list = make(map[int]int)
 	client_chan = make(chan clientmsg, 128)
@@ -53,7 +54,7 @@ func main() {
 func add_client(neten *netengine.NetEngine, nettype, addr string) {
 	fmt.Printf("connect to:%s addr:%s\n", nettype, addr)
 
-	id, err := neten.ConnectTo(nettype, addr)
+	id, err := neten.ConnectTo(nettype, addr, &clinotify)
 	if err != nil {
 		fmt.Println(err)
 		return

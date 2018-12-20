@@ -20,17 +20,17 @@ for_loop:
 		case r := <-c.send_chan:
 			c.send_data(r.ID, r.Data)
 		case r := <-c.add_conntion_chan:
-			con := c.add_conntion(r.Con, r.MaxBufLen, r.RecvBufLen, r.ReadTimeout, r.WriteTimeout)
+			con := c.add_conntion(r.Con, r.Notify, r.MaxBufLen, r.RecvBufLen, r.ReadTimeout, r.WriteTimeout)
 			r.ch <- con
 		case r := <-c.del_conntion_chan:
 			c.del_conntion(r)
 		case r := <-c.listen_chan:
 			var msg listen_ret_msg
-			msg.ID, msg.err = c.listen(r.Net, r.Addr)
+			msg.ID, msg.err = c.listen(r.Net, r.Addr, r.Notify)
 			r.ch <- msg
 		case r := <-c.connect_chan:
 			var msg listen_ret_msg
-			msg.ID, msg.err = c.connectto(r.Net, r.Addr)
+			msg.ID, msg.err = c.connectto(r.Net, r.Addr, r.Notify)
 			r.ch <- msg
 		case r := <-c.get_remote_addr_chan:
 			addr, ok := c.get_remote_addr(r.ID)

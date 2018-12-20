@@ -24,12 +24,12 @@ var server *netengine.NetEngine
 var listenid_count map[int]int
 var id_listenid map[int]int
 var server_chan chan servermsg
+var sernotify servernotify
 
 func main() {
 	server = new(netengine.NetEngine)
-	var sernotify servernotify
 
-	server.Init(&sernotify)
+	server.Init()
 
 	listenid_count = make(map[int]int)
 	id_listenid = make(map[int]int)
@@ -48,7 +48,7 @@ func main() {
 func add_server(neten *netengine.NetEngine, nettype, addr string) {
 	fmt.Printf("listen on:%s addr:%s\n", nettype, addr)
 
-	id, err := neten.Listen(nettype, addr)
+	id, err := neten.Listen(nettype, addr, &sernotify)
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -31,22 +31,24 @@ type NetNotify interface {
 }
 
 type conntion struct {
-	ID        int
-	SendChan  chan []byte
-	Con       *net.TCPConn
-	MaxBufLen int32
-	RecvBufLen int32
+	ID			int
+	SendChan	chan []byte
+	Con			*net.TCPConn
+	Notify		NetNotify
+	MaxBufLen	int32
+	RecvBufLen	int32
 
-	ReadTimeout   time.Duration
-	WriteTimeout   time.Duration
+	ReadTimeout		time.Duration
+	WriteTimeout	time.Duration
 	IsStart   bool
 	Send      SendFunc
 }
 type listener struct {
-	ID        int
-	Listen    *net.TCPListener
-	MaxBufLen int32
-	RecvBufLen int32
+	ID			int
+	Listen		*net.TCPListener
+	Notify		NetNotify
+	MaxBufLen	int32
+	RecvBufLen	int32
 
 	ReadTimeout   time.Duration
 	WriteTimeout   time.Duration
@@ -60,8 +62,6 @@ type NetEngine struct {
 
 	lock sync.Locker
 	id   int
-
-	notify NetNotify
 
 	add_conntion_chan chan add_conntion_msg
 	del_conntion_chan chan int
@@ -81,6 +81,7 @@ type NetEngine struct {
 
 type add_conntion_msg struct {
 	Con				*net.TCPConn
+	Notify			NetNotify
 	MaxBufLen		int32
 	RecvBufLen		int32
 	ReadTimeout		time.Duration
@@ -112,11 +113,13 @@ type listen_ret_msg struct {
 type listen_msg struct {
 	Net  string
 	Addr string
+	Notify			NetNotify
 	ch   chan listen_ret_msg
 }
 type connect_msg struct {
 	Net  string
 	Addr string
+	Notify			NetNotify
 	ch   chan listen_ret_msg
 }
 type start_msg struct {
