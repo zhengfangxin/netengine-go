@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/zhengfangxin/netengine"
+	netengine "github.com/zhengfangxin/netengine-go"
 	"math/rand"
 	"net"
 	"time"
@@ -23,7 +23,7 @@ var client_chan chan clientmsg
 var client_len chan int
 var client_send_ch chan int
 
-const conntion_count = 10000
+const conntion_count = 2
 
 func main() {
 
@@ -43,7 +43,7 @@ func main() {
 		add_client(client, "tcp", "127.0.0.1:9001")
 	}
 
-	//go send_run()
+	go send_run()
 
 	for {
 		time.Sleep(time.Second * 5)
@@ -51,15 +51,16 @@ func main() {
 }
 
 func add_client(neten *netengine.NetEngine, nettype, addr string) {
-	//fmt.Printf("connect to:%s addr:%s\n", nettype, addr)
+	fmt.Printf("connect to:%s addr:%s\n", nettype, addr)
 
 	id, err := neten.ConnectTo(nettype, addr)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	//neten.SetBuffer(id, 10001)
-	//neten.SetCloseTime(id, 100, true, false)
+	//neten.SetBuffer(id, 500*1024, 10*1024)
+	//neten.SetTimeout(id, time.Second, 0)
+
 	msg := clientmsg{true, id}
 	client_chan <- msg
 	neten.Start(id)
@@ -106,7 +107,6 @@ func client_run() {
 			for _, v := range client_list {
 				send_req(client, v, data, nil)
 			}
-			//go send_run()
 		case d, ok := <-client_chan:
 			if !ok {
 				return
@@ -114,7 +114,8 @@ func client_run() {
 			if d.add {
 				id := d.id
 				client_list[id] = id
-				if len(client_list) >= conntion_count {
+				
+				/*if len(client_list) >= conntion_count {
 					fmt.Println("start send", len(client_list))
 					data := make([]byte, 100)
 					for _, v := range client_list {
@@ -125,7 +126,7 @@ func client_run() {
 						}
 						send_req(client, v, data, send)
 					}
-				}
+				}*/
 			} else {
 				id := d.id
 				delete(client_list, id)
@@ -142,7 +143,7 @@ func client_run() {
 				last = cur
 				fmt.Println("client", len(client_list), datalen/3, count/3)
 				datalen = 0
-				count = 1
+				count = 0
 			}
 		case <-timer.C:
 			timer = nil
@@ -166,7 +167,7 @@ func (c *clientnotify) OnAccept(listenid int, id int, addr net.Addr) {
 	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
 }
 func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int {
-	//fmt.Printf("recv data id:%d len:%d\n", id, len(data))
+	fmt.Printf("recv data id:%d len:%d\n", id, len(data))
 	datalen := len(data)
 	const headlen = 3
 	if datalen < headlen {
@@ -194,19 +195,12 @@ func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 
 	client_len <- all_len
 
-	//sendd := make([]byte, all_len)
-	//copy(sendd, data[:all_len])
-	send_d := data[:all_len]
-
-	//client.Send(id, send_d)
-	send(send_d)
-
 	return all_len
 }
 func (c *clientnotify) OnClosed(id int) {
 	msg := clientmsg{false, id}
 	client_chan <- msg
-	//fmt.Printf("on closed id:%d\n", id)
+	fmt.Printf("on closed id:%d\n", id)
 }
 func (c *clientnotify) OnBufferLimit(id int) {
 	fmt.Printf("on buffer limit id:%d\n", id)

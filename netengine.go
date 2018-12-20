@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 func (c *NetEngine) Init(notify NetNotify) error {
@@ -21,7 +22,7 @@ func (c *NetEngine) Init(notify NetNotify) error {
 	c.get_remote_addr_chan = make(chan get_addr_msg)
 	c.get_local_addr_chan = make(chan get_addr_msg)
 	c.set_buf_chan = make(chan set_buf_msg)
-	c.set_closetime_chan = make(chan set_closetime_msg)
+	c.set_timeout_chan = make(chan set_timeout_msg)
 	c.listen_chan = make(chan listen_msg)
 	c.connect_chan = make(chan connect_msg)
 	c.start_chan = make(chan start_msg)
@@ -44,7 +45,7 @@ func (c *NetEngine) Stop() {
 	close(c.get_remote_addr_chan)
 	close(c.get_local_addr_chan)
 	close(c.set_buf_chan)
-	close(c.set_closetime_chan)
+	close(c.set_timeout_chan)
 	close(c.listen_chan)
 	close(c.connect_chan)
 	close(c.start_chan)
@@ -81,26 +82,26 @@ func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
 	return addr, true
 }
 
-// default：1m
-func (c *NetEngine) SetBuffer(id int, maxSendBufLen int) {
+// default：1m,5k，最好在start之前调用修改
+func (c *NetEngine) SetBuffer(id int, maxSendBufLen, recvBufLen int) {
 	defer recover()
 	var msg set_buf_msg
 	msg.ID = id
 	msg.MaxSendBufLen = maxSendBufLen
+	msg.RecvBufLen = recvBufLen
 
 	c.set_buf_chan <- msg
 }
 
-// default：1m,send,recv:true
-func (c *NetEngine) SetCloseTime(id int, close_second int, send, recv bool) {
+// 设置读写超时，0不超时，最好在start之前调用，默认读写不超时，超时会断开连接，此功能用法：多少秒无数据断开连接
+func (c *NetEngine) SetTimeout(id int, read,write time.Duration) {
 	defer recover()
-	var msg set_closetime_msg
+	var msg set_timeout_msg
 	msg.ID = id
-	msg.CloseSecond = close_second
-	msg.Send = send
-	msg.Recv = recv
+	msg.ReadTimeout = read
+	msg.WriteTimeout = write
 
-	c.set_closetime_chan <- msg
+	c.set_timeout_chan <- msg
 }
 func (c *NetEngine) Listen(net, addr string) (id int, err error) {
 	defer recover()
@@ -146,7 +147,7 @@ func (c *NetEngine) Start(id int) {
 	c.start_chan <- msg
 }
 
-// Send is asynchronous
+// Send is asynchronous，不会持有data
 func (c *NetEngine) Send(id int, data []byte) {
 	defer recover()
 	var msg send_msg

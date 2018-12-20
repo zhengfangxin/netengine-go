@@ -3,6 +3,7 @@ package netengine
 import (
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 func (c *NetEngine) listen(nettype, addr string) (int, error) {
@@ -18,32 +19,23 @@ func (c *NetEngine) listen(nettype, addr string) (int, error) {
 	n := new(listener)
 	n.ID = c.get_id()
 	n.Listen = tcplisten
-	n.MaxBufLen = default_buf_len
-	n.Timeout = default_timeout
-	n.RecvValid = 1
-	n.SendValid = 1
+	n.MaxBufLen = default_max_buf_len
+	n.RecvBufLen = default_read_buf_len
+	n.ReadTimeout = 0
+	n.WriteTimeout = 0
 	n.IsStart = false
 
 	c.listener_list[n.ID] = n
 
 	return n.ID, nil
 }
-func (c *NetEngine) set_listen_buf(lis *listener, maxBuf int) {
+func (c *NetEngine) set_listen_buf(lis *listener, maxBuf,recvBuf int) {
 	atomic.StoreInt32(&lis.MaxBufLen, int32(maxBuf))
+	atomic.StoreInt32(&lis.RecvBufLen, int32(recvBuf))
 }
-func (c *NetEngine) set_listen_close_time(lis *listener, close_second int, send, recv bool) {
-	var isend int32 = 0
-	if send {
-		isend = 1
-	}
-	var irecv int32 = 0
-	if recv {
-		irecv = 1
-	}
-
-	atomic.StoreInt32(&lis.Timeout, int32(close_second))
-	atomic.StoreInt32(&lis.SendValid, isend)
-	atomic.StoreInt32(&lis.RecvValid, irecv)
+func (c *NetEngine) set_listen_timeout(lis *listener, readTimeout,writeTimeout time.Duration) {
+	lis.ReadTimeout = readTimeout
+	lis.WriteTimeout = writeTimeout
 }
 func (c *NetEngine) start_listen(lis *listener) {
 	if lis.IsStart {
@@ -77,15 +69,16 @@ func (c *NetEngine) accept_run(lis *listener) {
 		}
 
 		maxBufLen := atomic.LoadInt32(&lis.MaxBufLen)
-		timeout := atomic.LoadInt32(&lis.Timeout)
-		send := atomic.LoadInt32(&lis.SendValid)
-		recv := atomic.LoadInt32(&lis.RecvValid)
+		recvBufLen := atomic.LoadInt32(&lis.RecvBufLen)
+		readTimeout := lis.ReadTimeout
+		writeTimeout := lis.WriteTimeout
+
 		var msg add_conntion_msg
 		msg.Con = con
 		msg.MaxBufLen = maxBufLen
-		msg.Timeout = timeout
-		msg.SendValid = send
-		msg.RecvValid = recv
+		msg.RecvBufLen = recvBufLen
+		msg.ReadTimeout = readTimeout
+		msg.WriteTimeout = writeTimeout
 		msg.ch = make(chan *conntion)
 		c.add_conntion_chan <- msg
 

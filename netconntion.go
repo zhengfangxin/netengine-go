@@ -18,20 +18,21 @@ func (c *NetEngine) connectto(nettype, addr string) (int, error) {
 		return 0, err
 	}
 
-	r := c.add_conntion(con, default_buf_len, default_timeout, 1, 1)
+	r := c.add_conntion(con, default_max_buf_len, default_read_buf_len, 0, 0)
 
 	return r.ID, nil
 }
 func get_send(con *conntion) SendFunc {
 	r := func(d []byte) error {
 		netcon := con.Con
-		send := atomic.LoadInt32(&con.SendValid)
-		if send != 0 {
-			timeout := atomic.LoadInt32(&con.Timeout)
-			add := time.Second * time.Duration(timeout)
-			netcon.SetWriteDeadline(time.Now().Add(add))
-		} else {
+		
+		writeTimeout := con.WriteTimeout
+		fmt.Println("write timeout", writeTimeout)
+
+		if writeTimeout != 0 {
+			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
 		}
+
 		for {
 			n, err := netcon.Write(d)
 			if err != nil {
@@ -49,14 +50,14 @@ func get_send(con *conntion) SendFunc {
 	}
 	return r
 }
-func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, recv int32) *conntion {
+func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen,recvBufLen int32, readTimeout,writeTimeout time.Duration) *conntion {
 	n := new(conntion)
 	n.ID = c.get_id()
 	n.Con = con
 	n.MaxBufLen = maxBufLen
-	n.Timeout = timeout
-	n.RecvValid = recv
-	n.SendValid = send
+	n.RecvBufLen = recvBufLen
+	n.ReadTimeout = readTimeout
+	n.WriteTimeout = writeTimeout
 	n.SendChan = make(chan []byte, 8)
 	n.IsStart = false
 	n.Send = get_send(n)
@@ -66,34 +67,13 @@ func (c *NetEngine) add_conntion(con *net.TCPConn, maxBufLen, timeout, send, rec
 	return n
 }
 
-func (c *NetEngine) set_conntion_buf(con *conntion, maxBuf int) {
+func (c *NetEngine) set_conntion_buf(con *conntion, maxBuf,recvBuf int) {
 	atomic.StoreInt32(&con.MaxBufLen, int32(maxBuf))
+	atomic.StoreInt32(&con.RecvBufLen, int32(recvBuf))
 }
-func (c *NetEngine) set_conntion_close_time(con *conntion, close_second int, send, recv bool) {
-	var isend int32 = 0
-	if send {
-		isend = 1
-	}
-	var irecv int32 = 0
-	if recv {
-		irecv = 1
-	}
-
-	add := time.Second * time.Duration(close_second)
-	atomic.StoreInt32(&con.Timeout, int32(close_second))
-	atomic.StoreInt32(&con.SendValid, isend)
-	atomic.StoreInt32(&con.RecvValid, irecv)
-	newtime := time.Now().Add(add)
-	if send {
-		con.Con.SetWriteDeadline(newtime)
-	} else {
-		con.Con.SetWriteDeadline(time.Time{})
-	}
-	if recv {
-		con.Con.SetReadDeadline(newtime)
-	} else {
-		con.Con.SetReadDeadline(time.Time{})
-	}
+func (c *NetEngine) set_conntion_timeout(con *conntion, readTimeout,writeTimeout time.Duration) {
+	con.ReadTimeout = readTimeout
+	con.WriteTimeout = writeTimeout
 }
 func (c *NetEngine) start_conntion(con *conntion) {
 	if con.IsStart {
@@ -120,17 +100,19 @@ func (c *NetEngine) conntion_recv(con *conntion) {
 
 	send_fun := con.Send
 
-	all_buf := make([]byte, 1024*5)
+	buflen := int(con.RecvBufLen)
+	all_buf := make([]byte, buflen)	
+	
+	fmt.Println("read buf", buflen)
+
 	valid_begin_pos := 0
 	valid_end_pos := 0
 recv_loop:
 	for {
-		recv := atomic.LoadInt32(&con.RecvValid)
-		timeout := atomic.LoadInt32(&con.Timeout)
-		if recv != 0 {
-			add := time.Second * time.Duration(timeout)
-			net_con.SetReadDeadline(time.Now().Add(add))
-		} else {
+		readTimeout := con.ReadTimeout
+		fmt.Println("read timeout", readTimeout)
+		if readTimeout != 0 {
+			net_con.SetReadDeadline(time.Now().Add(readTimeout))
 		}
 
 		if valid_end_pos >= len(all_buf) {
@@ -192,10 +174,12 @@ func (c *NetEngine) conntion_write(con *conntion) {
 
 	datalen := 0
 	data := make([][]byte, 0, 1)
+	maxBufLen := int(con.MaxBufLen)
+
+	fmt.Println("max buf", maxBufLen)
 
 for_loop:
-	for {
-		maxBufLen := int(atomic.LoadInt32(&con.MaxBufLen))
+	for {		
 		timer := time.NewTimer(time.Hour)
 		if len(data) > 0 {
 			s := data[0]
@@ -239,9 +223,16 @@ for_loop:
 }
 func conntion_write_net(con *conntion, data chan []byte) {
 	netcon := con.Con
-	defer netcon.Close()
+	defer netcon.Close()	
 
 	for d := range data {
+		writeTimeout := con.WriteTimeout
+		fmt.Println("write timeout", writeTimeout)
+
+		if writeTimeout != 0 {
+			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
+		}
+
 		err := con.Send(d)
 		if err != nil {
 			break

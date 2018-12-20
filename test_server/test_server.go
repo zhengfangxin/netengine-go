@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/zhengfangxin/netengine"
+	netengine "github.com/zhengfangxin/netengine-go"
 	"net"
 	"runtime"
 	"time"
@@ -53,9 +53,11 @@ func add_server(neten *netengine.NetEngine, nettype, addr string) {
 		fmt.Println(err)
 		return
 	}
-	neten.Start(id)
-	//neten.SetBuffer(id, 10000)
-	//neten.SetCloseTime(id, 100, true, false)
+
+	neten.SetBuffer(id, 5*1024*1024, 10*1024)
+	neten.SetTimeout(id, time.Second*10, time.Hour)
+
+	neten.Start(id)	
 }
 
 func server_run() {
@@ -94,16 +96,16 @@ func server_run() {
 }
 
 func (c *servernotify) OnAcceptBefore(listenid int, addr net.Addr) bool {
-	//fmt.Printf("accept before listenid:%d addr:%s\n", listenid, addr)
+	fmt.Printf("accept before listenid:%d addr:%s\n", listenid, addr)
 	return true
 }
 func (c *servernotify) OnAccept(listenid int, id int, addr net.Addr) {
-	//fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
+	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
 	msg := servermsg{true, id, listenid}
 	server_chan <- msg
 }
 func (c *servernotify) OnRecv(id int, data []byte, send netengine.SendFunc) int {
-	//fmt.Printf("recv data id:%d len:%d\n", id, len(data))
+	fmt.Printf("recv data id:%d len:%d\n", id, len(data))
 	datalen := len(data)
 	const headlen = 3
 	if datalen < headlen {
@@ -129,17 +131,16 @@ func (c *servernotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 		return 0
 	}
 
-	//sendd := make([]byte, all_len)
-	//copy(sendd, data[:all_len])
 	send_d := data[:all_len]
 
+	// 使用下面两种方式发送数据
 	//server.Send(id, send_d)
 	send(send_d)
 
 	return all_len
 }
 func (c *servernotify) OnClosed(id int) {
-	//fmt.Printf("on closed id:%d\n", id)
+	fmt.Printf("on closed id:%d\n", id)
 	msg := servermsg{false, id, 0}
 	server_chan <- msg
 }

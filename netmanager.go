@@ -20,7 +20,7 @@ for_loop:
 		case r := <-c.send_chan:
 			c.send_data(r.ID, r.Data)
 		case r := <-c.add_conntion_chan:
-			con := c.add_conntion(r.Con, r.MaxBufLen, r.Timeout, r.SendValid, r.RecvValid)
+			con := c.add_conntion(r.Con, r.MaxBufLen, r.RecvBufLen, r.ReadTimeout, r.WriteTimeout)
 			r.ch <- con
 		case r := <-c.del_conntion_chan:
 			c.del_conntion(r)
@@ -50,9 +50,9 @@ for_loop:
 			f := c.get_send_func(r.ID)
 			r.ch <- f
 		case r := <-c.set_buf_chan:
-			c.set_buf(r.ID, r.MaxSendBufLen)
-		case r := <-c.set_closetime_chan:
-			c.set_close_time(r.ID, r.CloseSecond, r.Send, r.Recv)
+			c.set_buf(r.ID, r.MaxSendBufLen, r.RecvBufLen)
+		case r := <-c.set_timeout_chan:
+			c.set_timeout(r.ID, r.ReadTimeout, r.WriteTimeout)
 		case r := <-c.start_chan:
 			c.start(r.ID)
 		case r := <-c.close_chan:
@@ -156,24 +156,24 @@ func (c *NetEngine) get_local_addr(id int) (addr net.Addr, r bool) {
 	}
 	return
 }
-func (c *NetEngine) set_buf(id int, maxBuf int) {
+func (c *NetEngine) set_buf(id int, maxBuf,recvBuf int) {
 	lis, ok := c.listener_list[id]
 	if ok {
-		c.set_listen_buf(lis, maxBuf)
+		c.set_listen_buf(lis, maxBuf, recvBuf)
 	}
 	con, ok := c.conntion_list[id]
 	if ok {
-		c.set_conntion_buf(con, maxBuf)
+		c.set_conntion_buf(con, maxBuf, recvBuf)
 	}
 }
-func (c *NetEngine) set_close_time(id int, close_second int, send, recv bool) {
+func (c *NetEngine) set_timeout(id int, readTimeout,writeTimeout time.Duration) {
 	lis, ok := c.listener_list[id]
 	if ok {
-		c.set_listen_close_time(lis, close_second, send, recv)
+		c.set_listen_timeout(lis, readTimeout, writeTimeout)
 	}
 	con, ok := c.conntion_list[id]
 	if ok {
-		c.set_conntion_close_time(con, close_second, send, recv)
+		c.set_conntion_timeout(con, readTimeout, writeTimeout)
 	}
 }
 func (c *NetEngine) start(id int) {
