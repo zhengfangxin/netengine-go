@@ -27,7 +27,6 @@ func get_send(con *conntion) SendFunc {
 		netcon := con.Con
 		
 		writeTimeout := con.WriteTimeout
-		fmt.Println("write timeout", writeTimeout)
 
 		if writeTimeout != 0 {
 			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
@@ -227,7 +226,6 @@ func conntion_write_net(con *conntion, data chan []byte) {
 
 	for d := range data {
 		writeTimeout := con.WriteTimeout
-		fmt.Println("write timeout", writeTimeout)
 
 		if writeTimeout != 0 {
 			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))

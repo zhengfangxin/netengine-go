@@ -123,6 +123,7 @@ func (c *NetEngine) ConnectTo(net, addr string, notify NetNotify) (id int, err e
 	var msg connect_msg
 	msg.Net = net
 	msg.Addr = addr
+	msg.Notify = notify
 	msg.ch = make(chan listen_ret_msg)
 
 	c.connect_chan <- msg
