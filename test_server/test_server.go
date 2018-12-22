@@ -20,16 +20,16 @@ type servermsg struct {
 	listenid int
 }
 
-var server *netengine.NetEngine
+var neten *netengine.NetEngine
 var listenid_count map[int]int
 var id_listenid map[int]int
 var server_chan chan servermsg
 var sernotify servernotify
 
 func main() {
-	server = new(netengine.NetEngine)
+	neten = new(netengine.NetEngine)
 
-	server.Init()
+	neten.Init()
 
 	listenid_count = make(map[int]int)
 	id_listenid = make(map[int]int)
@@ -37,25 +37,27 @@ func main() {
 
 	go server_run()
 
-	add_server(server, "tcp", "127.0.0.1:9000")
-	add_server(server, "tcp", "127.0.0.1:9001")
+	add_server("tcp", "127.0.0.1:9000")
+	add_server("tcp", "127.0.0.1:9001")
 
 	for {
 		time.Sleep(time.Second * 5)
 	}
 }
 
-func add_server(neten *netengine.NetEngine, nettype, addr string) {
+func add_server(nettype, addr string) {
 	fmt.Printf("listen on:%s addr:%s\n", nettype, addr)
-
-	id, err := neten.Listen(nettype, addr, &sernotify)
+	
+	lis, err := net.Listen(nettype, addr)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-
-	neten.SetBuffer(id, 5*1024*1024, 10*1024)
-	neten.SetTimeout(id, time.Second*10, time.Hour)
+	id, err := neten.AddListen(lis, &sernotify)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	neten.Start(id)	
 }
@@ -95,11 +97,18 @@ func server_run() {
 	}
 }
 
-func (c *servernotify) OnAcceptBefore(listenid int, addr net.Addr) bool {
-	fmt.Printf("accept before listenid:%d addr:%s\n", listenid, addr)
-	return true
-}
-func (c *servernotify) OnAccept(listenid int, id int, addr net.Addr) {
+func (c *servernotify) OnAccepted(listenid int, conn net.Conn) {
+	addr := conn.RemoteAddr()
+	readTimeout := time.Second*0
+	writeTimeout := time.Second*0
+	id,err := neten.AddConnection(conn, c, 5*1024, 1024*1024, readTimeout, writeTimeout)
+	if err != nil {
+		fmt.Println("add conn", err)
+		return
+	}
+
+	neten.Start(id)
+
 	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
 	msg := servermsg{true, id, listenid}
 	server_chan <- msg
@@ -134,7 +143,7 @@ func (c *servernotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 	send_d := data[:all_len]
 
 	// 使用下面两种方式发送数据
-	//server.Send(id, send_d)
+	//neten.Send(id, send_d)
 	send(send_d)
 
 	return all_len

@@ -3,31 +3,30 @@ package netengine
 import (
 	"fmt"
 	"net"
-	"sync/atomic"
 	"time"
 )
 
-func (c *NetEngine) connectto(nettype, addr string, notify NetNotify) (int, error) {
-	tcpaddr, err := net.ResolveTCPAddr(nettype, addr)
-	if err != nil {
-		return 0, err
-	}
+type conntion struct {
+	ID			int
+	C			*NetEngine
+	SendChan	chan []byte
+	Con			net.Conn
+	Notify		NetNotify
+	MaxBufLen	int
+	RecvBufLen	int
 
-	con, err := net.DialTCP(nettype, nil, tcpaddr)
-	if err != nil {
-		return 0, err
-	}
-
-	r := c.add_conntion(con, notify, default_max_buf_len, default_read_buf_len, 0, 0)
-
-	return r.ID, nil
+	ReadTimeout		time.Duration
+	WriteTimeout	time.Duration
+	IsStart   bool
+	Send      SendFunc
 }
-func get_send(con *conntion) SendFunc {
-	r := func(d []byte) error {
-		netcon := con.Con
-		
-		writeTimeout := con.WriteTimeout
 
+func (con *conntion) get_send() SendFunc {
+	writeTimeout := con.WriteTimeout
+
+	r := func(d []byte) error {
+		netcon := con.Con		
+		
 		if writeTimeout != 0 {
 			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
 		}
@@ -49,52 +48,27 @@ func get_send(con *conntion) SendFunc {
 	}
 	return r
 }
-func (c *NetEngine) add_conntion(con *net.TCPConn, notify NetNotify, maxBufLen,recvBufLen int32, readTimeout,writeTimeout time.Duration) *conntion {
-	n := new(conntion)
-	n.ID = c.get_id()
-	n.Con = con
-	n.Notify = notify
-	n.MaxBufLen = maxBufLen
-	n.RecvBufLen = recvBufLen
-	n.ReadTimeout = readTimeout
-	n.WriteTimeout = writeTimeout
-	n.SendChan = make(chan []byte, 8)
-	n.IsStart = false
-	n.Send = get_send(n)
 
-	c.conntion_list[n.ID] = n
-
-	return n
-}
-
-func (c *NetEngine) set_conntion_buf(con *conntion, maxBuf,recvBuf int) {
-	atomic.StoreInt32(&con.MaxBufLen, int32(maxBuf))
-	atomic.StoreInt32(&con.RecvBufLen, int32(recvBuf))
-}
-func (c *NetEngine) set_conntion_timeout(con *conntion, readTimeout,writeTimeout time.Duration) {
-	con.ReadTimeout = readTimeout
-	con.WriteTimeout = writeTimeout
-}
-func (c *NetEngine) start_conntion(con *conntion) {
+func (con *conntion) start() {
 	if con.IsStart {
 		return
 	}
 	con.IsStart = true
-	go c.conntion_run(con)
+	go con.conntion_run()
 }
-func (c *NetEngine) close_conntion(con *conntion) {
+func (con *conntion) close() {
 	con.Con.Close()
 }
-func (c *NetEngine) conntion_run(con *conntion) {
-	go c.conntion_write(con)
-	c.conntion_recv(con)
+func (con *conntion) conntion_run() {
+	go con.conntion_write()
+	con.conntion_recv()
 
-	con.Notify.OnClosed(con.ID)
-
-	c.del_conntion_chan <- con.ID
+	con.C.del_conntion_chan <- con.ID
+	con.Notify.OnClosed(con.ID)	
 }
 
-func (c *NetEngine) conntion_recv(con *conntion) {
+
+func (con *conntion) conntion_recv() {
 	net_con := con.Con
 	defer net_con.Close()
 
@@ -104,12 +78,13 @@ func (c *NetEngine) conntion_recv(con *conntion) {
 	all_buf := make([]byte, buflen)	
 	
 	notify := con.Notify
+	readTimeout := con.ReadTimeout
 
 	valid_begin_pos := 0
 	valid_end_pos := 0
+
 recv_loop:
-	for {
-		readTimeout := con.ReadTimeout
+	for {		
 		if readTimeout != 0 {
 			net_con.SetReadDeadline(time.Now().Add(readTimeout))
 		}
@@ -149,37 +124,37 @@ recv_loop:
 			} else {
 				break
 			}
-		}
-		if valid_begin_pos == valid_end_pos {
-			valid_begin_pos = 0
-			valid_end_pos = 0
-		}
+			if valid_begin_pos == valid_end_pos {
+				valid_begin_pos = 0
+				valid_end_pos = 0
+				break
+			}
+		}		
 	}
 }
-func (c *NetEngine) send_data(id int, data []byte) {
-	con, ok := c.conntion_list[id]
-	if !ok {
-		return
-	}
+func (con *conntion) send_data(data []byte) {	
 	con.SendChan <- data
 }
-func (c *NetEngine) conntion_write(con *conntion) {
+func (con *conntion) conntion_write() {
 	defer con.Con.Close()
 
 	data_chan := make(chan []byte)
 	defer close(data_chan)
 
-	go conntion_write_net(con, data_chan)
+	go con.conntion_write_net(data_chan)
 
 	notify := con.Notify
 
 	datalen := 0
 	data := make([][]byte, 0, 1)
 	maxBufLen := int(con.MaxBufLen)
+	
+	timer := time.NewTicker(time.Hour)
+	defer timer.Stop()
 
 for_loop:
 	for {		
-		timer := time.NewTimer(time.Hour)
+		
 		if len(data) > 0 {
 			s := data[0]
 			select {
@@ -197,7 +172,6 @@ for_loop:
 				data = data[1:]
 				datalen = datalen - len(s)
 			case <-timer.C:
-				timer = nil
 			}
 		} else {
 			select {
@@ -212,21 +186,17 @@ for_loop:
 					break for_loop
 				}
 			case <-timer.C:
-				timer = nil
 			}
-		}
-		if timer != nil && !timer.Stop() {
-			<-timer.C
-		}
+		}		
 	}
 }
-func conntion_write_net(con *conntion, data chan []byte) {
+func (con *conntion) conntion_write_net(data chan []byte) {
 	netcon := con.Con
 	defer netcon.Close()	
 
-	for d := range data {
-		writeTimeout := con.WriteTimeout
+	writeTimeout := con.WriteTimeout
 
+	for d := range data {
 		if writeTimeout != 0 {
 			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
 		}

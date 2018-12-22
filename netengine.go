@@ -20,10 +20,7 @@ func (c *NetEngine) Init() error {
 
 	c.get_remote_addr_chan = make(chan get_addr_msg)
 	c.get_local_addr_chan = make(chan get_addr_msg)
-	c.set_buf_chan = make(chan set_buf_msg)
-	c.set_timeout_chan = make(chan set_timeout_msg)
-	c.listen_chan = make(chan listen_msg)
-	c.connect_chan = make(chan connect_msg)
+	c.add_listen_chan = make(chan add_listen_msg)
 	c.start_chan = make(chan start_msg)
 	c.send_chan = make(chan send_msg, 1024)
 	c.get_sendfunc_chan = make(chan get_sendfunc_msg)
@@ -43,10 +40,9 @@ func (c *NetEngine) Stop() {
 	// close all chan
 	close(c.get_remote_addr_chan)
 	close(c.get_local_addr_chan)
-	close(c.set_buf_chan)
-	close(c.set_timeout_chan)
-	close(c.listen_chan)
-	close(c.connect_chan)
+	close(c.add_listen_chan)
+	close(c.add_conntion_chan)
+	close(c.del_conntion_chan)
 	close(c.start_chan)
 	close(c.send_chan)
 	close(c.close_chan)
@@ -81,36 +77,34 @@ func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
 	return addr, true
 }
 
-// default：1m,5k，最好在start之前调用修改
-func (c *NetEngine) SetBuffer(id int, maxSendBufLen, recvBufLen int) {
+func (c *NetEngine) AddListen(lis net.Listener, notify NetNotify) (id int, err error) {
 	defer recover()
-	var msg set_buf_msg
-	msg.ID = id
-	msg.MaxSendBufLen = maxSendBufLen
+	var msg add_listen_msg
+	msg.Lis = lis
+	msg.Notify = notify
+	msg.ch = make(chan listen_ret_msg)
+
+	c.add_listen_chan <- msg
+
+	r, ok := <-msg.ch
+	if !ok {
+		return 0, errors.New("can't get result")
+	}
+	return r.ID, r.err
+}
+
+func (c *NetEngine) AddConnection(con net.Conn, notify NetNotify, recvBufLen, maxSendBufLen int, readTimeout,writeTimeout time.Duration) (id int, err error) {
+	defer recover()
+	
+	var msg add_conntion_msg
+	msg.Con = con
+	msg.Notify = notify
+	msg.MaxBufLen = maxSendBufLen
 	msg.RecvBufLen = recvBufLen
-
-	c.set_buf_chan <- msg
-}
-
-// 设置读写超时，0不超时，最好在start之前调用，默认读写不超时，超时会断开连接，此功能用法：多少秒无数据断开连接
-func (c *NetEngine) SetTimeout(id int, read,write time.Duration) {
-	defer recover()
-	var msg set_timeout_msg
-	msg.ID = id
-	msg.ReadTimeout = read
-	msg.WriteTimeout = write
-
-	c.set_timeout_chan <- msg
-}
-func (c *NetEngine) Listen(net, addr string, notify NetNotify) (id int, err error) {
-	defer recover()
-	var msg listen_msg
-	msg.Net = net
-	msg.Addr = addr
-	msg.Notify = notify
-	msg.ch = make(chan listen_ret_msg)
-
-	c.listen_chan <- msg
+	msg.ReadTimeout = readTimeout
+	msg.WriteTimeout = writeTimeout
+	msg.ch = make(chan add_conntion_ret_msg)
+	c.add_conntion_chan <- msg
 
 	r, ok := <-msg.ch
 	if !ok {
@@ -118,23 +112,6 @@ func (c *NetEngine) Listen(net, addr string, notify NetNotify) (id int, err erro
 	}
 	return r.ID, r.err
 }
-func (c *NetEngine) ConnectTo(net, addr string, notify NetNotify) (id int, err error) {
-	defer recover()
-	var msg connect_msg
-	msg.Net = net
-	msg.Addr = addr
-	msg.Notify = notify
-	msg.ch = make(chan listen_ret_msg)
-
-	c.connect_chan <- msg
-
-	r, ok := <-msg.ch
-	if !ok {
-		return 0, errors.New("can't get result")
-	}
-	return r.ID, r.err
-}
-
 /*
 Listen or CoonnectTo
 SetBuffer;SetCloseTime

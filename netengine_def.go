@@ -2,19 +2,15 @@ package netengine
 
 import (
 	"net"
-	"sync"
 	"time"
 )
 
-const default_read_buf_len = 5 * 1024
-const default_max_buf_len = 1024 * 1024
-
 type SendFunc func(data []byte) error
 type NetNotify interface {
-	// return false to close
-	// 同一个listenid 会在一个goroute中调用
-	OnAcceptBefore(listenid int, addr net.Addr) bool
-	OnAccept(listenid int, id int, addr net.Addr)
+	/* 同一个listenid 会在一个goroute中调用，
+		新的连接需要手动, id,err := AddConnection Start(id)
+	*/
+	OnAccepted(listenid int, con net.Conn)
 
 	/* return -1 to close
 	return >0 to consume data
@@ -30,112 +26,57 @@ type NetNotify interface {
 	OnBufferLimit(id int)
 }
 
-type conntion struct {
-	ID			int
-	SendChan	chan []byte
-	Con			*net.TCPConn
-	Notify		NetNotify
-	MaxBufLen	int32
-	RecvBufLen	int32
-
-	ReadTimeout		time.Duration
-	WriteTimeout	time.Duration
-	IsStart   bool
-	Send      SendFunc
+type add_conntion_ret_msg struct {
+	ID  int
+	err error
 }
-type listener struct {
-	ID			int
-	Listen		*net.TCPListener
-	Notify		NetNotify
-	MaxBufLen	int32
-	RecvBufLen	int32
-
-	ReadTimeout   time.Duration
-	WriteTimeout   time.Duration
-
-	IsStart   bool
-}
-
-type NetEngine struct {
-	conntion_list map[int]*conntion
-	listener_list map[int]*listener
-
-	lock sync.Locker
-	id   int
-
-	add_conntion_chan chan add_conntion_msg
-	del_conntion_chan chan int
-	stop_chan         chan stop_msg
-
-	get_remote_addr_chan chan get_addr_msg
-	get_local_addr_chan  chan get_addr_msg
-	set_buf_chan         chan set_buf_msg
-	set_timeout_chan   chan set_timeout_msg
-	listen_chan          chan listen_msg
-	connect_chan         chan connect_msg
-	start_chan           chan start_msg
-	send_chan            chan send_msg
-	get_sendfunc_chan    chan get_sendfunc_msg
-	close_chan           chan close_msg
-}
-
 type add_conntion_msg struct {
-	Con				*net.TCPConn
+	Con				net.Conn
 	Notify			NetNotify
-	MaxBufLen		int32
-	RecvBufLen		int32
+	MaxBufLen		int
+	RecvBufLen		int
 	ReadTimeout		time.Duration
 	WriteTimeout	time.Duration
-	ch				chan *conntion
+	ch				chan add_conntion_ret_msg
 }
+
 type stop_msg struct {
 	ch chan int
 }
+
 type get_addr_msg struct {
 	ID int
 	ch chan net.Addr
-}
-type set_buf_msg struct {
-	ID            int
-	MaxSendBufLen int
-	RecvBufLen	  int
-}
-type set_timeout_msg struct {
-	ID				int
-	ReadTimeout		time.Duration
-	WriteTimeout	time.Duration
 }
 
 type listen_ret_msg struct {
 	ID  int
 	err error
 }
-type listen_msg struct {
-	Net  string
-	Addr string
-	Notify			NetNotify
+type add_listen_msg struct {
+	Lis		net.Listener
+	Notify	NetNotify
 	ch   chan listen_ret_msg
 }
-type connect_msg struct {
-	Net  string
-	Addr string
-	Notify			NetNotify
-	ch   chan listen_ret_msg
-}
+
 type start_msg struct {
 	ID int
 }
+
 type send_msg struct {
 	ID   int
 	Data []byte
 }
+
 type get_sendfunc_msg struct {
 	ID int
 	ch chan SendFunc
 }
+
 type close_msg struct {
 	ID int
 }
+
 type get_conntion_count_msg struct {
 	ID int
 	ch chan int

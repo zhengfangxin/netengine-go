@@ -1,37 +1,63 @@
 package netengine
 
 import (
-	"fmt"
 	"net"
 	"time"
+	"sync"
 )
+
+type NetEngine struct {
+	conntion_list map[int]*conntion
+	listener_list map[int]*listener
+
+	lock sync.Locker
+	id   int
+
+	add_conntion_chan chan add_conntion_msg
+	del_conntion_chan chan int
+	stop_chan         chan stop_msg
+
+	get_remote_addr_chan chan get_addr_msg
+	get_local_addr_chan  chan get_addr_msg
+	add_listen_chan      chan add_listen_msg
+	start_chan           chan start_msg
+	send_chan            chan send_msg
+	get_sendfunc_chan    chan get_sendfunc_msg
+	close_chan           chan close_msg
+}
 
 func (c *NetEngine) manage_run() {
 	is_stop := false
 	var stop_req stop_msg
+
+	check_stop_finish := time.NewTicker(time.Second)
+	defer check_stop_finish.Stop()
+
 for_loop:
 	for {
-		timeout := time.Hour
-		if is_stop {
-			timeout = time.Second
-		}
-		timer := time.NewTimer(timeout)
 		select {
 		case r := <-c.send_chan:
-			c.send_data(r.ID, r.Data)
+			con,ok := c.conntion_list[r.ID]
+			if !ok {
+				break
+			}
+			con.send_data(r.Data)
+
 		case r := <-c.add_conntion_chan:
-			con := c.add_conntion(r.Con, r.Notify, r.MaxBufLen, r.RecvBufLen, r.ReadTimeout, r.WriteTimeout)
-			r.ch <- con
+			var msg add_conntion_ret_msg
+			new_con := c.add_conntion(r.Con, r.Notify, r.MaxBufLen, r.RecvBufLen, r.ReadTimeout, r.WriteTimeout)
+			msg.ID, msg.err = new_con.ID, nil
+			r.ch <- msg
+
 		case r := <-c.del_conntion_chan:
 			c.del_conntion(r)
-		case r := <-c.listen_chan:
+
+		case r := <-c.add_listen_chan:
 			var msg listen_ret_msg
-			msg.ID, msg.err = c.listen(r.Net, r.Addr, r.Notify)
+			nlis := c.add_listen(r.Lis, r.Notify)
+			msg.ID, msg.err = nlis.ID, nil
 			r.ch <- msg
-		case r := <-c.connect_chan:
-			var msg listen_ret_msg
-			msg.ID, msg.err = c.connectto(r.Net, r.Addr, r.Notify)
-			r.ch <- msg
+
 		case r := <-c.get_remote_addr_chan:
 			addr, ok := c.get_remote_addr(r.ID)
 			if ok {
@@ -39,6 +65,7 @@ for_loop:
 			} else {
 				r.ch <- nil
 			}
+
 		case r := <-c.get_local_addr_chan:
 			addr, ok := c.get_local_addr(r.ID)
 			if ok {
@@ -46,32 +73,30 @@ for_loop:
 			} else {
 				r.ch <- nil
 			}
+
 		case r := <-c.get_sendfunc_chan:
 			f := c.get_send_func(r.ID)
 			r.ch <- f
-		case r := <-c.set_buf_chan:
-			c.set_buf(r.ID, r.MaxSendBufLen, r.RecvBufLen)
-		case r := <-c.set_timeout_chan:
-			c.set_timeout(r.ID, r.ReadTimeout, r.WriteTimeout)
+			
 		case r := <-c.start_chan:
 			c.start(r.ID)
+
 		case r := <-c.close_chan:
 			c.close(r.ID)
+
 		case r := <-c.stop_chan:
 			stop_req = r
 			is_stop = true
 			c.closeall()
-		case <-timer.C:
-			timer = nil
-			if is_stop {
-				c.closeall()
-				if len(c.conntion_list)+len(c.listener_list) <= 0 {
-					break for_loop
-				}
+
+		case <-check_stop_finish.C:
+			if !is_stop {
+				break
 			}
-		}
-		if timer != nil && !timer.Stop() {
-			<-timer.C
+			if len(c.conntion_list)+len(c.listener_list) <= 0 {
+				break for_loop
+			}
+
 		}
 	}
 	stop_req.ch <- 0
@@ -96,6 +121,41 @@ func (c *NetEngine) get_id() int {
 	c.id = r + 1
 	return r
 }
+
+func (c *NetEngine) add_conntion(con net.Conn, notify NetNotify, maxBufLen,recvBufLen int, readTimeout,writeTimeout time.Duration) *conntion {
+	n := new(conntion)
+	n.ID = c.get_id()
+	n.C = c
+	n.Con = con
+	n.Notify = notify
+	n.MaxBufLen = maxBufLen
+	n.RecvBufLen = recvBufLen
+	n.ReadTimeout = readTimeout
+	n.WriteTimeout = writeTimeout
+	n.SendChan = make(chan []byte, 8)
+	n.IsStart = false
+	n.Send = n.get_send()
+
+	c.conntion_list[n.ID] = n
+
+	return n
+}
+
+func (c *NetEngine) add_listen(lis net.Listener, notify NetNotify) *listener {
+	n := new(listener)
+	n.ID = c.get_id()
+	n.C = c
+	n.Listen = lis
+	n.Notify = notify
+	
+	n.IsStart = false
+
+	c.listener_list[n.ID] = n
+
+	return n
+}
+
+
 func (c *NetEngine) del_conntion(id int) {
 	con, ok := c.conntion_list[id]
 	if ok {
@@ -105,6 +165,7 @@ func (c *NetEngine) del_conntion(id int) {
 	}
 	delete(c.listener_list, id)
 }
+
 func (c *NetEngine) closeall() {
 	listen_idlist := make([]int, 0)
 	conntion_idlist := make([]int, 0)
@@ -128,6 +189,7 @@ func (c *NetEngine) closeall() {
 		delete(c.conntion_list, v)
 	}
 }
+
 func (c *NetEngine) get_remote_addr(id int) (addr net.Addr, r bool) {
 	addr = nil
 	r = false
@@ -142,6 +204,7 @@ func (c *NetEngine) get_remote_addr(id int) (addr net.Addr, r bool) {
 	}
 	return
 }
+
 func (c *NetEngine) get_local_addr(id int) (addr net.Addr, r bool) {
 	addr = nil
 	r = false
@@ -156,46 +219,29 @@ func (c *NetEngine) get_local_addr(id int) (addr net.Addr, r bool) {
 	}
 	return
 }
-func (c *NetEngine) set_buf(id int, maxBuf,recvBuf int) {
-	lis, ok := c.listener_list[id]
-	if ok {
-		c.set_listen_buf(lis, maxBuf, recvBuf)
-	}
-	con, ok := c.conntion_list[id]
-	if ok {
-		c.set_conntion_buf(con, maxBuf, recvBuf)
-	}
-}
-func (c *NetEngine) set_timeout(id int, readTimeout,writeTimeout time.Duration) {
-	lis, ok := c.listener_list[id]
-	if ok {
-		c.set_listen_timeout(lis, readTimeout, writeTimeout)
-	}
-	con, ok := c.conntion_list[id]
-	if ok {
-		c.set_conntion_timeout(con, readTimeout, writeTimeout)
-	}
-}
+
 func (c *NetEngine) start(id int) {
 	lis, ok := c.listener_list[id]
 	if ok {
-		c.start_listen(lis)
+		lis.start()
 	}
 	con, ok := c.conntion_list[id]
 	if ok {
-		c.start_conntion(con)
+		con.start()
 	}
 }
+
 func (c *NetEngine) close(id int) {
 	lis, ok := c.listener_list[id]
 	if ok {
-		c.close_listen(lis)
+		lis.close()
 	}
 	con, ok := c.conntion_list[id]
 	if ok {
-		c.close_conntion(con)
+		con.close()
 	}
 }
+
 func (c *NetEngine) get_send_func(id int) SendFunc {
 	con, ok := c.conntion_list[id]
 	if ok {
@@ -204,6 +250,5 @@ func (c *NetEngine) get_send_func(id int) SendFunc {
 		}
 		return con.Send
 	}
-	fmt.Println("get func", id, nil)
 	return nil
 }

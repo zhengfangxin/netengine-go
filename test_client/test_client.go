@@ -17,7 +17,7 @@ type clientmsg struct {
 	id  int
 }
 
-var client *netengine.NetEngine
+var neten *netengine.NetEngine
 var client_list map[int]int
 var client_chan chan clientmsg
 var client_len chan int
@@ -28,9 +28,9 @@ const conntion_count = 2
 
 func main() {
 
-	client = new(netengine.NetEngine)
+	neten = new(netengine.NetEngine)
 	
-	client.Init()
+	neten.Init()
 
 	client_list = make(map[int]int)
 	client_chan = make(chan clientmsg, 128)
@@ -40,34 +40,45 @@ func main() {
 	go client_run()
 
 	for i := 0; i < conntion_count/2; i++ {
-		add_client(client, "tcp", "127.0.0.1:9000")
-		add_client(client, "tcp", "127.0.0.1:9001")
+		add_client("tcp", "127.0.0.1:9000")
+		add_client("tcp", "127.0.0.1:9001")
 	}
 
 	go send_run()
+
+	/*time.Sleep(time.Second*10)
+	fmt.Println("net stop ..")
+	neten.Stop()
+	fmt.Println("net stop suc")*/
 
 	for {
 		time.Sleep(time.Second * 5)
 	}
 }
 
-func add_client(neten *netengine.NetEngine, nettype, addr string) {
+func add_client(nettype, addr string) {
 	fmt.Printf("connect to:%s addr:%s\n", nettype, addr)
 
-	id, err := neten.ConnectTo(nettype, addr, &clinotify)
+	conn, err := net.Dial(nettype, addr)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	//neten.SetBuffer(id, 500*1024, 10*1024)
-	//neten.SetTimeout(id, time.Second, 0)
+
+	readTimeout := time.Second*0
+	writeTimeout := time.Second*0
+	id,err := neten.AddConnection(conn, &clinotify, 5*1024, 1024*1024, readTimeout, writeTimeout)
+	if err != nil {
+		fmt.Println("add conn", err)
+		return
+	}
 
 	msg := clientmsg{true, id}
 	client_chan <- msg
 	neten.Start(id)
 }
 
-func send_req(neten *netengine.NetEngine, id int, data []byte, send netengine.SendFunc) {
+func send_req(id int, data []byte, send netengine.SendFunc) {
 	var buf bytes.Buffer
 
 	datalen := int16(len(data))
@@ -91,6 +102,7 @@ func send_run() {
 		n := rand.Intn(1024)
 		client_send_ch <- n
 
+		fmt.Println("send", n)
 		time.Sleep(time.Second)
 	}
 }
@@ -106,7 +118,7 @@ func client_run() {
 		case d := <-client_send_ch:
 			data := make([]byte, d)
 			for _, v := range client_list {
-				send_req(client, v, data, nil)
+				send_req(v, data, nil)
 			}
 		case d, ok := <-client_chan:
 			if !ok {
@@ -120,12 +132,12 @@ func client_run() {
 					fmt.Println("start send", len(client_list))
 					data := make([]byte, 100)
 					for _, v := range client_list {
-						send := client.GetSendFunc(v)
+						send := neten.GetSendFunc(v)
 						if send == nil {
 							fmt.Println("get nil send func", v)
 							continue
 						}
-						send_req(client, v, data, send)
+						send_req(neten, v, data, send)
 					}
 				}*/
 			} else {
@@ -142,13 +154,13 @@ func client_run() {
 			sub := cur.Sub(last)
 			if sub > time.Second*3 {
 				last = cur
-				fmt.Println("client", len(client_list), datalen/3, count/3)
+				fmt.Println("neten", len(client_list), datalen/3, count/3)
 				datalen = 0
 				count = 0
 			}
 		case <-timer.C:
 			timer = nil
-			fmt.Println("client", len(client_list), datalen/3, datalen/3)
+			fmt.Println("neten", len(client_list), datalen/3, datalen/3)
 			datalen = 0
 		}
 		if timer != nil && !timer.Stop() {
@@ -160,12 +172,9 @@ func client_run() {
 type clientnotify struct {
 }
 
-func (c *clientnotify) OnAcceptBefore(listenid int, addr net.Addr) bool {
-	fmt.Printf("accept before listenid:%d addr:%s\n", listenid, addr)
-	return true
-}
-func (c *clientnotify) OnAccept(listenid int, id int, addr net.Addr) {
-	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, id, addr)
+func (c *clientnotify) OnAccepted(listenid int, conn net.Conn) {
+	addr := conn.RemoteAddr()
+	fmt.Printf("accepted listenid:%d netid:%d addr:%s\n", listenid, addr)
 }
 func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int {
 	fmt.Printf("recv data id:%d len:%d\n", id, len(data))
@@ -193,6 +202,8 @@ func (c *clientnotify) OnRecv(id int, data []byte, send netengine.SendFunc) int 
 	if datalen < all_len {
 		return 0
 	}
+
+	fmt.Println("recv pack", packlen)
 
 	client_len <- all_len
 
