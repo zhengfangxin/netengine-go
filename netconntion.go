@@ -60,10 +60,15 @@ func (con *conntion) close() {
 	con.Con.Close()
 }
 func (con *conntion) conntion_run() {
-	go con.conntion_write()
-	con.conntion_recv()
+	/*
+	退出流程，write失败，buffer limit 都会关闭链接，然后recv失败，发生del请求，
+	del处理会关闭sendchan ，这个时候才会退出send的routine
+	只有这样才不会引起崩溃，卡住等问题。
+	*/
+	go con.conntion_recv()
 
-	con.C.del_conntion_chan <- con.ID
+	con.conntion_write()
+	
 	con.Notify.OnClosed(con.ID)	
 }
 
@@ -71,6 +76,9 @@ func (con *conntion) conntion_run() {
 func (con *conntion) conntion_recv() {
 	net_con := con.Con
 	defer net_con.Close()
+	defer func() {
+		con.C.del_conntion_chan <- con.ID
+	}()
 
 	send_fun := con.Send
 
@@ -135,9 +143,9 @@ recv_loop:
 func (con *conntion) send_data(data []byte) {	
 	con.SendChan <- data
 }
-func (con *conntion) conntion_write() {
-	defer con.Con.Close()
 
+// 不要轻易修改这个函数的退出方式，会引起崩溃，卡住等问题
+func (con *conntion) conntion_write() {
 	data_chan := make(chan []byte)
 	defer close(data_chan)
 
@@ -153,8 +161,7 @@ func (con *conntion) conntion_write() {
 	defer timer.Stop()
 
 for_loop:
-	for {		
-		
+	for {
 		if len(data) > 0 {
 			s := data[0]
 			select {
@@ -189,10 +196,17 @@ for_loop:
 			}
 		}		
 	}
+
+	con.Con.Close()
+	
+	// 尽快清掉内存
+	data = nil
+	// 消耗数据，等待退出
+	for _ = range con.SendChan {
+	}
 }
 func (con *conntion) conntion_write_net(data chan []byte) {
-	netcon := con.Con
-	defer netcon.Close()	
+	netcon := con.Con	
 
 	writeTimeout := con.WriteTimeout
 
@@ -205,5 +219,10 @@ func (con *conntion) conntion_write_net(data chan []byte) {
 		if err != nil {
 			break
 		}
+	}
+
+	// 不要轻易修改这个函数的退出方式，会引起崩溃，卡住等问题
+	// 消耗数据，等待退出
+	for _ = range data {
 	}
 }

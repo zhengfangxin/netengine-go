@@ -157,6 +157,7 @@ func (c *NetEngine) add_listen(lis net.Listener, notify NetNotify) *listener {
 
 
 func (c *NetEngine) del_conntion(id int) {
+	// 到这里的都是已经close的
 	con, ok := c.conntion_list[id]
 	if ok {
 		close(con.SendChan)
