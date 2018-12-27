@@ -49,7 +49,10 @@ func (c *NetEngine) Stop() {
 }
 
 func (c *NetEngine) GetRemoteAddr(id int) (net.Addr, bool) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg get_addr_msg
 	msg.ID = id
 	msg.ch = make(chan net.Addr)
@@ -63,7 +66,10 @@ func (c *NetEngine) GetRemoteAddr(id int) (net.Addr, bool) {
 	return addr, true
 }
 func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg get_addr_msg
 	msg.ID = id
 	msg.ch = make(chan net.Addr)
@@ -78,7 +84,10 @@ func (c *NetEngine) GetLocalAddr(id int) (net.Addr, bool) {
 }
 
 func (c *NetEngine) AddListen(lis net.Listener, notify NetNotify) (id int, err error) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg add_listen_msg
 	msg.Lis = lis
 	msg.Notify = notify
@@ -94,7 +103,9 @@ func (c *NetEngine) AddListen(lis net.Listener, notify NetNotify) (id int, err e
 }
 
 func (c *NetEngine) AddConnection(con net.Conn, notify NetNotify, recvBufLen, maxSendBufLen int, readTimeout,writeTimeout time.Duration) (id int, err error) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
 	
 	var msg add_conntion_msg
 	msg.Con = con
@@ -118,7 +129,10 @@ SetBuffer;SetCloseTime
 Start
 */
 func (c *NetEngine) Start(id int) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg start_msg
 	msg.ID = id
 
@@ -127,7 +141,10 @@ func (c *NetEngine) Start(id int) {
 
 // Send is asynchronous，不会持有data
 func (c *NetEngine) Send(id int, data []byte) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg send_msg
 	msg.ID = id
 	msg.Data = make([]byte, len(data))
@@ -138,7 +155,10 @@ func (c *NetEngine) Send(id int, data []byte) {
 
 // SendFunc is synchronous
 func (c *NetEngine) GetSendFunc(id int) SendFunc {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg get_sendfunc_msg
 	msg.ID = id
 	msg.ch = make(chan SendFunc)
@@ -157,7 +177,10 @@ func (c *NetEngine) GetSendFunc(id int) SendFunc {
 }
 
 func (c *NetEngine) Close(id int) {
-	defer recover()
+	defer func() {
+		recover()
+	}()
+
 	var msg close_msg
 	msg.ID = id
 
