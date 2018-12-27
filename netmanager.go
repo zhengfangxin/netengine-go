@@ -132,7 +132,7 @@ func (c *NetEngine) add_conntion(con net.Conn, notify NetNotify, maxBufLen,recvB
 	n.RecvBufLen = recvBufLen
 	n.ReadTimeout = readTimeout
 	n.WriteTimeout = writeTimeout
-	n.SendChan = make(chan []byte, 8)
+	n.SendChan = make(chan []byte, 32)
 	n.IsStart = false
 	n.Send = n.get_send()
 

@@ -59,7 +59,7 @@ func add_server(nettype, addr string) {
 		return
 	}
 
-	neten.Start(id)	
+	neten.Start(id)
 }
 
 func server_run() {

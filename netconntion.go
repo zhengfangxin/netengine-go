@@ -1,9 +1,9 @@
 package netengine
 
 import (
-	"fmt"
 	"net"
 	"time"
+	"bytes"
 )
 
 type conntion struct {
@@ -26,12 +26,12 @@ func (con *conntion) get_send() SendFunc {
 
 	r := func(d []byte) error {
 		netcon := con.Con		
-		
-		if writeTimeout != 0 {
-			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
-		}
 
 		for {
+			if writeTimeout != 0 {
+				netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
+			}
+
 			n, err := netcon.Write(d)
 			if err != nil {
 				netcon.Close()
@@ -40,7 +40,6 @@ func (con *conntion) get_send() SendFunc {
 			if n == len(d) {
 				break
 			} else {
-				fmt.Println("write return", n, len(d))
 				d = d[n:]
 			}
 		}
@@ -205,24 +204,64 @@ for_loop:
 	for _ = range con.SendChan {
 	}
 }
-func (con *conntion) conntion_write_net(data chan []byte) {
-	netcon := con.Con	
+func (con *conntion) conntion_write_net(data_chan chan []byte) {
+	send := con.Send
 
-	writeTimeout := con.WriteTimeout
+	var buf bytes.Buffer
+	add_first := false
+	add_buf := false
 
-	for d := range data {
-		if writeTimeout != 0 {
-			netcon.SetWriteDeadline(time.Now().Add(writeTimeout))
+	for first_data := range data_chan {
+		add_first = false
+		add_buf = false
+
+		if len(first_data) > 60*1024 {
+			goto send_pos
 		}
 
-		err := con.Send(d)
-		if err != nil {
-			break
+send_loop:
+		for {			
+			select {
+				case cur_data := <- data_chan :
+					add_buf = true
+
+					if !add_first {
+						add_first = true
+						buf.Write(first_data)
+					}
+
+					buf.Write(cur_data)
+
+					if buf.Len() > 60*1024 {
+						break send_loop
+					}
+
+				default:
+					// 没有数据了，直接去发送
+					break send_loop				
+			}
+		}
+
+send_pos:
+		if !add_buf {
+			// 只有一个包
+			err := send(first_data)
+			if err != nil {
+				break
+			}
+		} else {
+			data := buf.Bytes()
+			err := send(data)
+			if err != nil {
+				break
+			}
+
+			buf.Truncate(0)
 		}
 	}
 
 	// 不要轻易修改这个函数的退出方式，会引起崩溃，卡住等问题
 	// 消耗数据，等待退出
-	for _ = range data {
+	for _ = range data_chan {
 	}
 }
