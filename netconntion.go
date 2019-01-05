@@ -222,7 +222,12 @@ func (con *conntion) conntion_write_net(data_chan chan []byte) {
 send_loop:
 		for {			
 			select {
-				case cur_data := <- data_chan :
+				case cur_data,ok := <- data_chan :
+					if !ok {
+						// data_chan is closed
+						break send_loop
+					}
+
 					add_buf = true
 
 					if !add_first {
