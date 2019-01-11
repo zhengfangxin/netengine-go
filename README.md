@@ -5,16 +5,16 @@ netengine in golang
 ```
 type SendFunc func(data []byte) error
 type NetNotify interface {
-	// return false to close
-	// 同一个listenid 会在一个goroute中调用
-	OnAcceptBefore(listenid int, addr net.Addr) bool
-	OnAccept(listenid int, id int, addr net.Addr)
+	/* 同一个listenid 会在一个goroute中调用，
+		新的连接需要手动, id,err := AddConnection Start(id)
+	*/
+	OnAccepted(listenid int, con net.Conn)
 
 	/* return -1 to close
 	return >0 to consume data
 	return 0 need more data
 	use send to send data get more performance
-	data is valid only in OnRecv, so careful to use it,
+	data is valid only in OnRecv, so careful to use it
 	*/
 	OnRecv(id int, data []byte, send SendFunc) int
 
