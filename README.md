@@ -5,9 +5,6 @@ netengine in golang
 ```
 type SendFunc func(data []byte) error
 type NetNotify interface {
-	/* 同一个listenid 会在一个goroute中调用，
-		新的连接需要手动, id,err := AddConnection Start(id)
-	*/
 	OnAccepted(listenid int, con net.Conn)
 
 	/* return -1 to close
