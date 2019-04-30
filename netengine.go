@@ -22,7 +22,7 @@ func (c *NetEngine) Init() error {
 	c.get_local_addr_chan = make(chan get_addr_msg)
 	c.add_listen_chan = make(chan add_listen_msg)
 	c.start_chan = make(chan start_msg)
-	c.send_chan = make(chan send_msg, 1024)
+	c.send_chan = make(chan send_msg, 10*10000)
 	c.get_sendfunc_chan = make(chan get_sendfunc_msg)
 	c.close_chan = make(chan close_msg)
 
